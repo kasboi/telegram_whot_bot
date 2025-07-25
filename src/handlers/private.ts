@@ -36,9 +36,9 @@ export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: numb
   if (isPlayerTurn) {
     messageText += `🎯 **YOUR TURN!**\n`
     if (validCards.length > 0) {
-      messageText += `💚 You can play ${validCards.length} card(s)\n\n`
+      messageText += `💚 You can play ${validCards.length} card(s) or draw a card\n\n`
     } else {
-      messageText += `❌ No valid plays - you must draw a card\n\n`
+      messageText += `❌ No valid plays - you can draw a card\n\n`
     }
   } else {
     messageText += `⏳ Waiting for ${currentPlayer?.firstName}'s turn\n\n`
@@ -69,8 +69,8 @@ export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: numb
     }
   }
 
-  // Add draw card button if it's player's turn and no valid plays
-  if (isPlayerTurn && validCards.length === 0) {
+  // Add draw card button if it's player's turn (always available)
+  if (isPlayerTurn) {
     keyboard.row().text('🎴 Draw Card', `draw_${groupChatId}`)
   }
 
