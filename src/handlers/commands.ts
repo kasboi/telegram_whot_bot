@@ -206,13 +206,13 @@ export function handleStartButton(bot: Bot) {
     if (failedDeliveries.length > 0) {
       const failedNames = failedDeliveries.join(', ')
       await ctx.api.sendMessage(groupChatId,
-        `⚠️ **Private Message Issue** ⚠️\n\n` +
+        `⚠️ <b>Private Message Issue</b> ⚠️\n\n` +
         `${failedNames}: I couldn't send your cards via private message!\n\n` +
-        `🔧 **How to fix:**\n` +
+        `🔧 <b>How to fix:</b>\n` +
         `1. Send /start to @${ctx.me.username} in private chat\n` +
         `2. Then use /mycards here to get your cards\n\n` +
         `💡 This only needs to be done once!`,
-        { parse_mode: 'Markdown' }
+        { parse_mode: 'HTML' }
       )
     }
 
