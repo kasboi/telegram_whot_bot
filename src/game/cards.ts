@@ -12,7 +12,7 @@ const DECK_COMPOSITION = {
 // Create official Whot deck according to game rules
 export function createDeck(): Card[] {
   const deck: Card[] = []
-  
+
   // Add numbered cards for each symbol according to official distribution
   for (const [symbol, numbers] of Object.entries(DECK_COMPOSITION)) {
     for (const number of numbers) {
@@ -24,7 +24,7 @@ export function createDeck(): Card[] {
       })
     }
   }
-  
+
   // Add 5 special Whot cards (wild cards with number 20)
   for (let i = 1; i <= 5; i++) {
     deck.push({
@@ -34,7 +34,7 @@ export function createDeck(): Card[] {
       isSpecial: true
     })
   }
-  
+
   return deck
 }
 
