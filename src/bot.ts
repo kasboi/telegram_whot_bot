@@ -1,5 +1,6 @@
 import { Bot } from "https://deno.land/x/grammy@v1.37.0/mod.ts"
 import { handleStartGame, handleJoinGame, handleStartButton } from './handlers/commands.ts'
+import { handleCardPlay, handleDrawCard } from './handlers/private.ts'
 import { logger } from './utils/logger.ts'
 
 import "jsr:@std/dotenv/load"
@@ -28,6 +29,10 @@ bot.on('callback_query', async (ctx, next) => {
 handleStartGame(bot)
 handleJoinGame(bot)
 handleStartButton(bot)
+
+// Register private chat handlers
+handleCardPlay(bot)
+handleDrawCard(bot)
 
 // Basic start message
 bot.command('start', async (ctx) => {

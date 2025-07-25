@@ -2,6 +2,7 @@ import { Bot, Context, InlineKeyboard } from "https://deno.land/x/grammy@v1.37.0
 import { createGame, getGame, addPlayer, canStartGame, startGameWithCards, getCurrentPlayer, getTopCard } from '../game/state.ts'
 import { logger } from '../utils/logger.ts'
 import { formatCard } from '../game/cards.ts'
+import { sendPlayerHand } from './private.ts'
 
 export function handleStartGame(bot: Bot) {
   bot.command('startgame', async (ctx: Context) => {
@@ -192,7 +193,11 @@ export function handleStartButton(bot: Bot) {
       parse_mode: 'Markdown'
     })
 
-    // TODO Stage 2: Send cards to players in private chat
+    // Send cards to each player in private chat
+    for (const player of game.players) {
+      await sendPlayerHand(bot, groupChatId, player.id, player.firstName)
+    }
+
     logger.info(`Game started in group ${groupChatId} with ${game.players.length} players`, {
       topCard: topCard?.id,
       currentPlayer: currentPlayer?.firstName
