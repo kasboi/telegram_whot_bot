@@ -27,12 +27,12 @@ export function handleStartGame(bot: Bot) {
     }
 
     // Create new game
-    createGame(groupChatId, creatorId, creatorName);
-    logger.info('Game created', { groupChatId, creatorId, creatorName });
+    createGame(groupChatId, creatorId, creatorName)
+    logger.info('Game created', { groupChatId, creatorId, creatorName })
 
     // Automatically add the creator to the game
-    addPlayer(groupChatId, creatorId, creatorName);
-    logger.info('Creator auto-joined game', { groupChatId, creatorId, creatorName });
+    addPlayer(groupChatId, creatorId, creatorName)
+    logger.info('Creator auto-joined game', { groupChatId, creatorId, creatorName })
 
     // Create join button
     const keyboard = new InlineKeyboard()
@@ -53,7 +53,7 @@ export function handleStartGame(bot: Bot) {
         reply_markup: keyboard,
         parse_mode: 'Markdown'
       }
-    );
+    )
   })
 }
 
@@ -140,18 +140,18 @@ export function handleJoinGame(bot: Bot) {
 
 export function handleStartButton(bot: Bot) {
   bot.callbackQuery(/^start_(-?\d+)$/, async (ctx) => {
-    const groupChatId = parseInt(ctx.match![1]);
-    const userId = ctx.from.id;
+    const groupChatId = parseInt(ctx.match![1])
+    const userId = ctx.from.id
 
-    logger.info('Start game button clicked', { groupChatId, userId });
+    logger.info('Start game button clicked', { groupChatId, userId })
 
     if (!canStartGame(groupChatId, userId)) {
-      await ctx.answerCallbackQuery({ 
-        text: '❌ Only the game creator can start the game when ready!', 
-        show_alert: true 
-      });
-      logger.warn('Non-creator attempted to start game', { groupChatId, userId });
-      return;
+      await ctx.answerCallbackQuery({
+        text: '❌ Only the game creator can start the game when ready!',
+        show_alert: true
+      })
+      logger.warn('Non-creator attempted to start game', { groupChatId, userId })
+      return
     }
 
     const game = getGame(groupChatId)

@@ -1,6 +1,6 @@
 # Telegram Whot Game Bot
 
-## Stage 1 Complete: Foundation ✅
+## Stage 1 Complete: Foundation ✅ + Bug Fixes
 
 ### What's Implemented:
 
@@ -10,6 +10,16 @@
 - ✅ Start game button (creator-only)
 - ✅ Basic game state management
 - ✅ Player tracking and validation
+- ✅ **File logging system** (logs to `bot.log`)
+- ✅ **Improved callback query feedback** with alerts
+- ✅ **Fixed join game state logic** (allows joining after 2+ players)
+
+### Bug Fixes Applied:
+
+1. ✅ **Join game feedback**: Now uses `show_alert` for better user feedback
+2. ✅ **State transition bug**: Fixed issue where players couldn't join after game became "ready_to_start"
+3. ✅ **Comprehensive logging**: All bot actions now logged to `bot.log` with structured data
+4. ✅ **Error handling**: Better error messages and logging for debugging
 
 ### How to Run:
 

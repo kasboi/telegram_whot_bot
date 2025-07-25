@@ -66,3 +66,26 @@ export function canStartGame(groupChatId: number, userId: number): boolean {
     game.creatorId === userId &&
     game.players.length >= 2
 }
+
+export function clearGame(groupChatId: number): boolean {
+  const game = gameState.get(groupChatId)
+  if (!game) {
+    return false
+  }
+
+  gameState.delete(groupChatId)
+  logger.info('Game cleared', { groupChatId, state: game.state, players: game.players.length })
+  return true
+}
+
+export function getGameStats(): { totalGames: number; gameStates: Record<string, number> } {
+  const games = Array.from(gameState.values())
+  const totalGames = games.length
+  const gameStates: Record<string, number> = {}
+
+  games.forEach(game => {
+    gameStates[game.state] = (gameStates[game.state] || 0) + 1
+  })
+
+  return { totalGames, gameStates }
+}

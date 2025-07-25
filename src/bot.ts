@@ -1,4 +1,4 @@
-import { Bot } from "https://deno.land/x/grammy@v1.20.3/mod.ts"
+import { Bot } from "https://deno.land/x/grammy@v1.37.0/mod.ts"
 import { handleStartGame, handleJoinGame, handleStartButton } from './handlers/commands.ts'
 import { logger } from './utils/logger.ts'
 
@@ -13,6 +13,16 @@ if (!botToken) {
 
 // Create bot instance
 const bot = new Bot(botToken)
+
+// Add debug logging for all callback queries
+bot.on('callback_query', async (ctx, next) => {
+  logger.info('Callback query received', {
+    data: ctx.callbackQuery.data,
+    userId: ctx.from.id,
+    userName: ctx.from.first_name
+  })
+  await next()
+})
 
 // Register command handlers
 handleStartGame(bot)
