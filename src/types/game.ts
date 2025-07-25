@@ -24,6 +24,7 @@ export interface Card {
 export interface Player {
   id: number        // Telegram user ID
   firstName: string // Telegram first name
+  username?: string // Telegram username
   state: PlayerState
   hand?: Card[]     // Player's cards (Stage 2+)
 }
@@ -38,6 +39,18 @@ export interface GameSession {
   // Stage 2: Game mechanics
   deck?: Card[]        // Draw pile
   discardPile?: Card[] // Discard pile
+  playedCards?: Card[] // All played cards
+  lastPlayedCard?: Card // Current top card
   currentPlayerIndex?: number // Whose turn it is
   direction?: 'clockwise' | 'counterclockwise' // Turn direction
+
+  // Stage 3: Special card effects
+  pendingEffect?: {
+    type: 'pick_cards' | 'skip_turn' | 'general_market'
+    amount: number
+    targetPlayerIndex?: number // Player index who must pick cards
+    stackCount?: number   // For stacking Pick Two/Three cards
+  }
+  chosenSymbol?: string // For Whot card symbol selection
+  winner?: Player      // Game winner
 }

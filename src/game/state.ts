@@ -1,6 +1,7 @@
-import { GameSession, GameState, Player } from '../types/game.ts'
+import { GameSession, Player, Card } from '../types/game.ts'
 import { logger } from '../utils/logger.ts'
 import { createDeck, dealCards, canPlayCard } from './cards.ts'
+import { getCardEffect, canPlayDuringEffect } from './special.ts'
 
 // Global game state storage (in-memory for MVP)
 export const gameState = new Map<number, GameSession>()
@@ -107,6 +108,8 @@ export function startGameWithCards(groupChatId: number): boolean {
   game.state = 'in_progress'
   game.deck = remainingDeck
   game.discardPile = discardPile
+  game.lastPlayedCard = discardPile[0] // Set the top card as the last played card
+  game.playedCards = [...discardPile] // Initialize played cards with the starting card
   game.currentPlayerIndex = 0
   game.direction = 'clockwise'
 
@@ -147,122 +150,162 @@ export function getTopCard(groupChatId: number) {
   return game.discardPile[game.discardPile.length - 1]
 }
 
-// Advance to next player's turn
-function advanceTurn(groupChatId: number): void {
-  const game = gameState.get(groupChatId)
-  if (!game || game.currentPlayerIndex === undefined) {
-    return
-  }
-
-  // Simple clockwise turn advancement
-  game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
-
-  logger.info('Turn advanced', {
-    groupChatId,
-    newCurrentPlayer: game.players[game.currentPlayerIndex]?.firstName,
-    playerIndex: game.currentPlayerIndex
-  })
-}
-
 // Play a card from player's hand
-export function playCard(groupChatId: number, userId: number, cardId: string): { success: boolean; error?: string } {
+export function playCard(groupChatId: number, userId: number, cardIndex: number): { success: boolean; message: string; gameEnded?: boolean; winner?: Player } {
   const game = gameState.get(groupChatId)
   if (!game || game.state !== 'in_progress') {
-    return { success: false, error: 'Game not found or not in progress' }
-  }
-
-  const currentPlayer = getCurrentPlayer(groupChatId)
-  if (!currentPlayer || currentPlayer.id !== userId) {
-    return { success: false, error: 'Not your turn' }
+    return { success: false, message: "No active game found" }
   }
 
   const player = game.players.find(p => p.id === userId)
-  if (!player || !player.hand) {
-    return { success: false, error: 'Player not found or has no hand' }
+  if (!player) {
+    return { success: false, message: "Player not found in this game" }
   }
 
-  const cardIndex = player.hand.findIndex(c => c.id === cardId)
-  if (cardIndex === -1) {
-    return { success: false, error: 'Card not found in hand' }
+  if (game.currentPlayerIndex !== game.players.indexOf(player)) {
+    return { success: false, message: "It's not your turn" }
+  }
+
+  if (!player.hand || cardIndex < 0 || cardIndex >= player.hand.length) {
+    return { success: false, message: "Invalid card index" }
   }
 
   const cardToPlay = player.hand[cardIndex]
-  const topCard = getTopCard(groupChatId)
-  if (!topCard) {
-    return { success: false, error: 'No top card found' }
+
+  // Check if this is a valid play (considering pending effects)
+  const canPlay = game.pendingEffect
+    ? canPlayDuringEffect(cardToPlay, game.pendingEffect)
+    : canPlayCard(cardToPlay, game.lastPlayedCard!)
+
+  if (!canPlay) {
+    const lastCard = game.lastPlayedCard!
+    return {
+      success: false,
+      message: game.pendingEffect
+        ? `You must play a card that can stack with the pending ${game.pendingEffect.type} effect`
+        : `You can only play a card that matches the symbol (${lastCard.symbol}) or number (${lastCard.number}), or play a Whot card`
+    }
   }
 
-  // Validate the play using existing canPlayCard logic
-  if (!canPlayCard(cardToPlay, topCard)) {
-    return { success: false, error: 'Invalid play - card doesn\'t match top card' }
-  }
-
-  // Remove card from player's hand
+  // Remove card from player's hand and add to played cards
   player.hand.splice(cardIndex, 1)
+  game.lastPlayedCard = cardToPlay
+  if (!game.playedCards) game.playedCards = []
+  game.playedCards.push(cardToPlay)
 
-  // Add card to discard pile
-  if (!game.discardPile) {
-    game.discardPile = []
+  // Handle special card effects
+  const effect = getCardEffect(cardToPlay)
+
+  if (effect) {
+    if (effect.type === 'pick_cards') {
+      // If there's already a pending pick effect and this card stacks, add to it
+      if (game.pendingEffect && game.pendingEffect.type === 'pick_cards') {
+        game.pendingEffect.amount += effect.pickAmount!
+      } else {
+        game.pendingEffect = {
+          type: 'pick_cards',
+          amount: effect.pickAmount!,
+          targetPlayerIndex: (game.currentPlayerIndex + 1) % game.players.length
+        }
+      }
+    } else if (effect.type === 'extra_turn') {
+      // Player gets another turn - don't advance turn
+      logger.info(`Player ${player.firstName} played Hold On - gets another turn`)
+    } else if (effect.type === 'skip_turn') {
+      // Skip the next player
+      game.currentPlayerIndex = (game.currentPlayerIndex + 2) % game.players.length
+      logger.info(`Player ${player.firstName} played Suspension - next player is skipped`)
+    } else if (effect.type === 'general_market') {
+      // All other players draw one card
+      for (let i = 0; i < game.players.length; i++) {
+        if (i !== game.currentPlayerIndex) {
+          const drawnCard = game.deck!.pop()
+          if (drawnCard) {
+            game.players[i].hand!.push(drawnCard)
+          }
+        }
+      }
+      logger.info(`Player ${player.firstName} played General Market - all other players draw a card`)
+    } else if (effect.type === 'choose_symbol') {
+      // Whot card requires symbol selection - this will be handled by the callback handler
+      // For now, just log it
+      logger.info(`Player ${player.firstName} played Whot - needs to choose symbol`)
+    }
   }
-  game.discardPile.push(cardToPlay)
 
-  // Check for win condition
-  if (player.hand.length === 0) {
-    player.state = 'winner'
+  // Check if player won
+  if (player.hand!.length === 0) {
     game.state = 'ended'
-    logger.info('Player won the game', { groupChatId, userId, playerName: player.firstName })
-    return { success: true }
+    game.winner = player
+    logger.info(`Game ${groupChatId} ended - winner: ${player.firstName}`)
+    return { success: true, message: `${player.firstName} wins!`, gameEnded: true, winner: player }
   }
 
-  // Advance turn (basic implementation - no special cards yet)
-  advanceTurn(groupChatId)
+  // Advance turn only if it's not a Hold On card
+  if (!effect || effect.type !== 'extra_turn') {
+    // If there's a pending effect and the next player must handle it
+    if (game.pendingEffect && game.pendingEffect.type === 'pick_cards') {
+      game.currentPlayerIndex = game.pendingEffect.targetPlayerIndex!
+    } else if (effect?.type !== 'skip_turn') {
+      // Normal turn advancement (skip_turn already handled above)
+      game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
+    }
+  }
 
-  logger.info('Card played successfully', {
-    groupChatId,
-    userId,
-    cardId: cardToPlay.id,
-    cardsRemaining: player.hand.length,
-    newTopCard: cardToPlay.id
-  })
+  const cardDescription = cardToPlay.number === 20 ? 'Whot' : `${cardToPlay.symbol} ${cardToPlay.number}`
+  logger.info(`Player ${player.firstName} played ${cardDescription}`)
 
-  return { success: true }
+  return { success: true, message: `Played ${cardDescription}` }
 }
 
 // Draw a card from the deck
-export function drawCard(groupChatId: number, userId: number): { success: boolean; error?: string; cardDrawn?: string } {
+export function drawCard(groupChatId: number, userId: number): { success: boolean; message: string; cardDrawn?: Card } {
   const game = gameState.get(groupChatId)
   if (!game || game.state !== 'in_progress') {
-    return { success: false, error: 'Game not found or not in progress' }
-  }
-
-  const currentPlayer = getCurrentPlayer(groupChatId)
-  if (!currentPlayer || currentPlayer.id !== userId) {
-    return { success: false, error: 'Not your turn' }
+    return { success: false, message: "No active game found" }
   }
 
   const player = game.players.find(p => p.id === userId)
-  if (!player || !player.hand) {
-    return { success: false, error: 'Player not found or has no hand' }
+  if (!player) {
+    return { success: false, message: "Player not found in this game" }
   }
 
-  if (!game.deck || game.deck.length === 0) {
-    return { success: false, error: 'No cards left in deck' }
+  if (game.currentPlayerIndex !== game.players.indexOf(player)) {
+    return { success: false, message: "It's not your turn" }
   }
 
-  // Draw the top card from deck
-  const drawnCard = game.deck.pop()!
-  player.hand.push(drawnCard)
+  if (game.deck!.length === 0) {
+    return { success: false, message: "No more cards in deck" }
+  }
 
-  // Advance turn after drawing
-  advanceTurn(groupChatId)
+  // Handle pending effects first
+  if (game.pendingEffect && game.pendingEffect.type === 'pick_cards') {
+    // Player must draw the required amount of cards
+    const cardsToDraw = game.pendingEffect.amount
+    const drawnCards: Card[] = []
 
-  logger.info('Card drawn successfully', {
-    groupChatId,
-    userId,
-    cardDrawn: drawnCard.id,
-    cardsInHand: player.hand.length,
-    cardsInDeck: game.deck.length
-  })
+    for (let i = 0; i < cardsToDraw && game.deck!.length > 0; i++) {
+      const card = game.deck!.pop()!
+      player.hand!.push(card)
+      drawnCards.push(card)
+    }
 
-  return { success: true, cardDrawn: drawnCard.id }
+    // Clear the pending effect and advance turn
+    game.pendingEffect = undefined
+    game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
+
+    logger.info(`Player ${player.firstName} drew ${cardsToDraw} cards due to pending effect`)
+    return {
+      success: true,
+      message: `Drew ${cardsToDraw} cards`,
+      cardDrawn: drawnCards[0] // Return first card for display
+    }
+  }
+
+  // Normal card draw (player choice)
+  const drawnCard = game.deck!.pop()!
+  player.hand!.push(drawnCard)
+
+  logger.info(`Player ${player.firstName} drew a card`)
+  return { success: true, message: "Drew a card", cardDrawn: drawnCard }
 }

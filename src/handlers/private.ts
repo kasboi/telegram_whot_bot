@@ -129,11 +129,14 @@ export function handleCardPlay(bot: Bot) {
       return
     }
 
-    const cardToPlay = player.hand.find(c => c.id === cardId)
-    if (!cardToPlay) {
+    // Find the card index in player's hand
+    const cardIndex = player.hand.findIndex(c => c.id === cardId)
+    if (cardIndex === -1) {
       await ctx.answerCallbackQuery('❌ Card not found in your hand')
       return
     }
+
+    const cardToPlay = player.hand[cardIndex]
 
     const topCard = getTopCard(groupChatId)
     if (!topCard) {
@@ -148,10 +151,10 @@ export function handleCardPlay(bot: Bot) {
     }
 
     // Play the card using game state logic
-    const result = playCard(groupChatId, userId, cardId)
+    const result = playCard(groupChatId, userId, cardIndex)
 
     if (!result.success) {
-      await ctx.answerCallbackQuery(`❌ ${result.error}`)
+      await ctx.answerCallbackQuery(`❌ ${result.message}`)
       return
     }
 
@@ -209,7 +212,7 @@ export function handleDrawCard(bot: Bot) {
     const result = drawCard(groupChatId, userId)
 
     if (!result.success) {
-      await ctx.answerCallbackQuery(`❌ ${result.error}`)
+      await ctx.answerCallbackQuery(`❌ ${result.message}`)
       return
     }
 
