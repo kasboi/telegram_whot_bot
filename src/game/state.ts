@@ -102,20 +102,20 @@ export function startGameWithCards(groupChatId: number): boolean {
   // Create and deal cards
   const deck = createDeck()
   const { playerHands, remainingDeck, discardPile } = dealCards(deck, game.players.length)
-  
+
   // Update game state
   game.state = 'in_progress'
   game.deck = remainingDeck
   game.discardPile = discardPile
   game.currentPlayerIndex = 0
   game.direction = 'clockwise'
-  
+
   // Assign cards to players and set them as active
   game.players.forEach((player, index) => {
     player.hand = playerHands[index]
     player.state = 'active'
   })
-  
+
   logger.info('Game started with cards', {
     groupChatId,
     totalPlayers: game.players.length,
@@ -123,7 +123,7 @@ export function startGameWithCards(groupChatId: number): boolean {
     topCard: discardPile[0]?.id,
     currentPlayer: game.players[0]?.firstName
   })
-  
+
   return true
 }
 
@@ -133,7 +133,7 @@ export function getCurrentPlayer(groupChatId: number): Player | undefined {
   if (!game || game.currentPlayerIndex === undefined) {
     return undefined
   }
-  
+
   return game.players[game.currentPlayerIndex]
 }
 
@@ -143,6 +143,6 @@ export function getTopCard(groupChatId: number) {
   if (!game || !game.discardPile || game.discardPile.length === 0) {
     return undefined
   }
-  
+
   return game.discardPile[game.discardPile.length - 1]
 }

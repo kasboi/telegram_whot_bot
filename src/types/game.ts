@@ -12,7 +12,7 @@ export type PlayerState =
   | 'out'
   | 'winner'
 
-export type WhotSymbol = 'circle' | 'triangle' | 'cross' | 'square' | 'whot'
+export type WhotSymbol = 'circle' | 'triangle' | 'cross' | 'square' | 'star' | 'whot'
 
 export interface Card {
   id: string
@@ -34,7 +34,7 @@ export interface GameSession {
   creatorId: number    // Creator's Telegram user ID
   players: Player[]
   createdAt: Date
-  
+
   // Stage 2: Game mechanics
   deck?: Card[]        // Draw pile
   discardPile?: Card[] // Discard pile
