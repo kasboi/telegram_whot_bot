@@ -15,5 +15,8 @@
     "semiColons": true,
     "singleQuote": false,
     "proseWrap": "preserve"
+  },
+  "tasks": {
+    "start": "deno run --allow-all src/bot.ts"
   }
 }
