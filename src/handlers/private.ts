@@ -4,23 +4,23 @@ import { getValidCards, formatCard, getCardEmoji } from '../game/cards.ts'
 import { logger } from '../utils/logger.ts'
 
 // Send initial hand to player when game starts
-export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: number, firstName: string) {
+export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: number, firstName: string): Promise<boolean> {
   const game = getGame(groupChatId)
   if (!game || game.state !== 'in_progress') {
     logger.warn('Attempted to send hand for invalid game', { groupChatId, userId })
-    return
+    return false
   }
 
   const player = game.players.find(p => p.id === userId)
   if (!player || !player.hand) {
     logger.warn('Player not found or has no hand', { groupChatId, userId })
-    return
+    return false
   }
 
   const topCard = getTopCard(groupChatId)
   if (!topCard) {
     logger.warn('No top card found', { groupChatId })
-    return
+    return false
   }
 
   const currentPlayer = getCurrentPlayer(groupChatId)
@@ -56,16 +56,14 @@ export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: numb
     row.forEach((card, index) => {
       const canPlay = isPlayerTurn && validCards.some(vc => vc.id === card.id)
       const emoji = getCardEmoji(card)
-      const buttonText = canPlay ? `${emoji} ${card.number}` : `🔒 ${card.number}`
+      const buttonText = canPlay ? `${emoji} ${card.number}` : `${emoji}🔒${card.number}`
 
       if (index === 0) {
         keyboard.text(buttonText, `play_${groupChatId}_${card.id}`)
       } else {
         keyboard.text(buttonText, `play_${groupChatId}_${card.id}`)
       }
-    })
-
-    // Start new row after every 3 cards (except for last row)
+    })    // Start new row after every 3 cards (except for last row)
     if (i + 3 < player.hand.length) {
       keyboard.row()
     }
@@ -90,12 +88,16 @@ export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: numb
       validPlays: validCards.length,
       isPlayerTurn
     })
+
+    return true // Success
   } catch (error) {
     logger.error('Failed to send hand to player', {
       groupChatId,
       userId,
       error: error instanceof Error ? error.message : String(error)
     })
+
+    return false // Failed
   }
 }
 

@@ -194,13 +194,74 @@ export function handleStartButton(bot: Bot) {
     })
 
     // Send cards to each player in private chat
+    const failedDeliveries: string[] = []
     for (const player of game.players) {
-      await sendPlayerHand(bot, groupChatId, player.id, player.firstName)
+      const success = await sendPlayerHand(bot, groupChatId, player.id, player.firstName)
+      if (!success) {
+        failedDeliveries.push(player.firstName)
+      }
+    }
+
+    // If some players couldn't receive private messages, show instructions in group
+    if (failedDeliveries.length > 0) {
+      const failedNames = failedDeliveries.join(', ')
+      await ctx.api.sendMessage(groupChatId,
+        `⚠️ **Private Message Issue** ⚠️\n\n` +
+        `${failedNames}: I couldn't send your cards via private message!\n\n` +
+        `🔧 **How to fix:**\n` +
+        `1. Send /start to @${ctx.me.username} in private chat\n` +
+        `2. Then use /mycards here to get your cards\n\n` +
+        `💡 This only needs to be done once!`,
+        { parse_mode: 'Markdown' }
+      )
     }
 
     logger.info(`Game started in group ${groupChatId} with ${game.players.length} players`, {
       topCard: topCard?.id,
       currentPlayer: currentPlayer?.firstName
     })
+  })
+}
+
+// Handle /mycards command for players who couldn't receive private messages
+export function handleMyCards(bot: Bot) {
+  bot.command('mycards', async (ctx) => {
+    // Only allow in group chats where there's an active game
+    if (ctx.chat?.type !== 'group' && ctx.chat?.type !== 'supergroup') {
+      await ctx.reply('❌ This command only works in group chats with an active game!')
+      return
+    }
+
+    const groupChatId = ctx.chat.id
+    const userId = ctx.from?.id
+    const firstName = ctx.from?.first_name || 'Unknown'
+
+    if (!userId) {
+      await ctx.reply('❌ Could not identify user.')
+      return
+    }
+
+    const game = getGame(groupChatId)
+    if (!game || game.state !== 'in_progress') {
+      await ctx.reply('❌ No active game in this group.')
+      return
+    }
+
+    const player = game.players.find(p => p.id === userId)
+    if (!player) {
+      await ctx.reply('❌ You are not part of this game.')
+      return
+    }
+
+    // Try to send cards via private message
+    const success = await sendPlayerHand(bot, groupChatId, userId, firstName)
+    if (success) {
+      await ctx.reply(`✅ ${firstName}, I've sent your cards via private message!`)
+    } else {
+      await ctx.reply(
+        `❌ ${firstName}, I still can't send you private messages.\n\n` +
+        `Please send /start to @${ctx.me.username} in private chat first!`
+      )
+    }
   })
 }
