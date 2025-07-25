@@ -1,6 +1,7 @@
 import { Bot, Context, InlineKeyboard } from "https://deno.land/x/grammy@v1.37.0/mod.ts"
-import { createGame, getGame, addPlayer, canStartGame } from '../game/state.ts'
+import { createGame, getGame, addPlayer, canStartGame, startGameWithCards, getCurrentPlayer, getTopCard } from '../game/state.ts'
 import { logger } from '../utils/logger.ts'
+import { formatCard } from '../game/cards.ts'
 
 export function handleStartGame(bot: Bot) {
   bot.command('startgame', async (ctx: Context) => {
@@ -160,9 +161,16 @@ export function handleStartButton(bot: Bot) {
       return
     }
 
-    // Mark game as in progress
-    game.state = 'in_progress'
-    game.players.forEach(player => player.state = 'active')
+    // Start the game with card dealing
+    const success = startGameWithCards(groupChatId)
+    if (!success) {
+      await ctx.answerCallbackQuery('❌ Failed to start game')
+      return
+    }
+
+    // Get updated game state
+    const currentPlayer = getCurrentPlayer(groupChatId)
+    const topCard = getTopCard(groupChatId)
 
     await ctx.answerCallbackQuery('🎮 Game started!')
 
@@ -171,16 +179,23 @@ export function handleStartButton(bot: Bot) {
       `👥 Players:\n`
 
     game.players.forEach((player, index) => {
-      messageText += `${index + 1}. ${player.firstName} ✅\n`
+      const isCurrentPlayer = index === game.currentPlayerIndex
+      const turnIndicator = isCurrentPlayer ? '👉' : '✅'
+      messageText += `${index + 1}. ${player.firstName} ${turnIndicator} (${player.hand?.length || 0} cards)\n`
     })
 
-    messageText += `\n🚀 Game started! Players will receive their cards in private chat.`
+    messageText += `\n🃏 Top card: ${formatCard(topCard!)}\n`
+    messageText += `🎯 Current turn: ${currentPlayer?.firstName}\n`
+    messageText += `\n📱 Players will receive their cards in private chat.`
 
     await ctx.editMessageText(messageText, {
       parse_mode: 'Markdown'
     })
 
     // TODO Stage 2: Send cards to players in private chat
-    console.log(`Game started in group ${groupChatId} with ${game.players.length} players`)
+    logger.info(`Game started in group ${groupChatId} with ${game.players.length} players`, {
+      topCard: topCard?.id,
+      currentPlayer: currentPlayer?.firstName
+    })
   })
 }

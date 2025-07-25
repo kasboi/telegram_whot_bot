@@ -49,16 +49,27 @@ Whot is a Nigerian card game similar to UNO. This bot implements two modes:
 - **Numbers**: 1-20 per symbol
 - **Validation**: Play if matches top discard by symbol OR number
 
-### Special Cards with Powers
+## 📋 Cards Included in the Deck
 
-| Card               | Number | Power                                                                 | Implementation Notes                                        |
-| ------------------ | ------ | --------------------------------------------------------------------- | ----------------------------------------------------------- |
-| **Whot**           | 20     | Wild card - can be played on any card. Player must declare new symbol | Show symbol selection buttons in private chat               |
-| **Pick Two**       | 2      | Next player draws 2 cards and skips turn. **Stackable**               | Can stack multiple Pick Twos - accumulate total draw amount |
-| **Pick Three**     | 5      | Next player draws 3 cards and skips turn. **Stackable**               | Can stack with other Pick Threes                            |
-| **Hold On**        | 1      | Current player gets another turn immediately                          | Keep turn with same player                                  |
-| **General Market** | 14     | All OTHER players draw 1 card each                                    | Skip current player when distributing cards                 |
-| **Suspension**     | 8      | Next player misses their turn completely                              | Advance turn counter by 2 positions                         |
+| Suit      | Included Numbers                        |
+| --------- | --------------------------------------- |
+| Circles   | 1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14 |
+| Triangles | 1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14 |
+| Crosses   | 1, 2, 3, 5, 7, 10, 11, 13, 14           |
+| Squares   | 1, 2, 3, 5, 7, 10, 11, 13, 14           |
+| Stars     | 1, 2, 3, 4, 5, 7, 8                     |
+| **Whot**  | 20 (x5 cards)                           |
+
+### 🎴 Special Cards with Powers
+
+| Card               | Number | Power                                                               | Implementation Notes                                        |
+| ------------------ | ------ | ------------------------------------------------------------------- | ----------------------------------------------------------- |
+| **Whot**           | 20     | Wild card – can be played on any card. Player must declare new suit | Show suit selection buttons in private chat                 |
+| **Pick Two**       | 2      | Next player draws 2 cards and skips turn. **Stackable**             | Can stack multiple Pick Twos – accumulate total draw amount |
+| **Pick Three**     | 5      | Next player draws 3 cards and skips turn. **Stackable**             | Can stack with other Pick Threes                            |
+| **Hold On**        | 1      | Current player gets another turn immediately                        | Keep turn with same player                                  |
+| **General Market** | 14     | All _other_ players draw 1 card each                                | Skip current player when distributing cards                 |
+| **Suspension**     | 8      | Next player misses their turn completely                            | Advance turn counter by 2 positions                         |
 
 ### Special Card Stacking Rules
 

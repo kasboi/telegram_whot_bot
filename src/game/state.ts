@@ -1,5 +1,6 @@
 import { GameSession, GameState, Player } from '../types/game.ts'
 import { logger } from '../utils/logger.ts'
+import { createDeck, dealCards } from './cards.ts'
 
 // Global game state storage (in-memory for MVP)
 export const gameState = new Map<number, GameSession>()
@@ -88,4 +89,60 @@ export function getGameStats(): { totalGames: number; gameStates: Record<string,
   })
 
   return { totalGames, gameStates }
+}
+
+// Stage 2: Start the actual game with cards
+export function startGameWithCards(groupChatId: number): boolean {
+  const game = gameState.get(groupChatId)
+  if (!game || game.state !== 'ready_to_start') {
+    logger.warn('Attempted to start game with cards in invalid state', { groupChatId, gameState: game?.state })
+    return false
+  }
+
+  // Create and deal cards
+  const deck = createDeck()
+  const { playerHands, remainingDeck, discardPile } = dealCards(deck, game.players.length)
+  
+  // Update game state
+  game.state = 'in_progress'
+  game.deck = remainingDeck
+  game.discardPile = discardPile
+  game.currentPlayerIndex = 0
+  game.direction = 'clockwise'
+  
+  // Assign cards to players and set them as active
+  game.players.forEach((player, index) => {
+    player.hand = playerHands[index]
+    player.state = 'active'
+  })
+  
+  logger.info('Game started with cards', {
+    groupChatId,
+    totalPlayers: game.players.length,
+    cardsInDeck: remainingDeck.length,
+    topCard: discardPile[0]?.id,
+    currentPlayer: game.players[0]?.firstName
+  })
+  
+  return true
+}
+
+// Get current player
+export function getCurrentPlayer(groupChatId: number): Player | undefined {
+  const game = gameState.get(groupChatId)
+  if (!game || game.currentPlayerIndex === undefined) {
+    return undefined
+  }
+  
+  return game.players[game.currentPlayerIndex]
+}
+
+// Get top card from discard pile
+export function getTopCard(groupChatId: number) {
+  const game = gameState.get(groupChatId)
+  if (!game || !game.discardPile || game.discardPile.length === 0) {
+    return undefined
+  }
+  
+  return game.discardPile[game.discardPile.length - 1]
 }
