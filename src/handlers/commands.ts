@@ -1,5 +1,6 @@
-import { Bot, Context, InlineKeyboard } from "https://deno.land/x/grammy@v1.20.3/mod.ts"
+import { Bot, Context, InlineKeyboard } from "https://deno.land/x/grammy@v1.37.0/mod.ts"
 import { createGame, getGame, addPlayer, canStartGame } from '../game/state.ts'
+import { logger } from '../utils/logger.ts'
 
 export function handleStartGame(bot: Bot) {
   bot.command('startgame', async (ctx: Context) => {
@@ -26,50 +27,87 @@ export function handleStartGame(bot: Bot) {
     }
 
     // Create new game
-    const game = createGame(groupChatId, creatorId, creatorName)
+    createGame(groupChatId, creatorId, creatorName);
+    logger.info('Game created', { groupChatId, creatorId, creatorName });
+
+    // Automatically add the creator to the game
+    addPlayer(groupChatId, creatorId, creatorName);
+    logger.info('Creator auto-joined game', { groupChatId, creatorId, creatorName });
 
     // Create join button
     const keyboard = new InlineKeyboard()
       .text('🃏 Join Game', `join_${groupChatId}`)
 
+    logger.info('Creating join button with callback data', {
+      callbackData: `join_${groupChatId}`,
+      groupChatId
+    })
+
     await ctx.reply(
       `🎴 **Whot Game Started!** 🎴\n\n` +
       `🎯 Game created by ${creatorName}\n` +
-      `👥 Waiting for players to join...\n` +
-      `⏳ Need at least 2 players to start\n\n` +
+      `👥 Players: ${creatorName} (1)\n` +
+      `⏳ Need at least 1 more player to start\n\n` +
       `Click the button below to join:`,
       {
         reply_markup: keyboard,
         parse_mode: 'Markdown'
       }
-    )
+    );
   })
 }
 
 export function handleJoinGame(bot: Bot) {
-  bot.callbackQuery(/^join_(\d+)$/, async (ctx) => {
+  // Debug: Log all callback queries to see what we're receiving
+  bot.on('callback_query:data', async (ctx, next) => {
+    logger.info('All callback query data received', {
+      data: ctx.callbackQuery.data,
+      userId: ctx.from.id,
+      userName: ctx.from.first_name
+    })
+    await next()
+  })
+
+  bot.callbackQuery(/^join_(-?\d+)$/, async (ctx) => {
     const groupChatId = parseInt(ctx.match![1])
     const userId = ctx.from.id
     const userName = ctx.from.first_name || 'Unknown'
 
+    logger.info('Join game button clicked - MATCHED REGEX', { groupChatId, userId, userName })
+
     const success = addPlayer(groupChatId, userId, userName)
 
     if (!success) {
-      await ctx.answerCallbackQuery('❌ Could not join game (already joined or game not available)')
+      const game = getGame(groupChatId)
+      let errorMessage = '❌ Could not join game'
+
+      if (!game) {
+        errorMessage = '❌ Game not found'
+      } else if (game.players.some(p => p.id === userId)) {
+        errorMessage = '✅ You are already in this game!'
+      } else if (game.state === 'in_progress') {
+        errorMessage = '❌ Game has already started'
+      } else {
+        errorMessage = '❌ Cannot join game at this time'
+      }
+
+      await ctx.answerCallbackQuery({ text: errorMessage, show_alert: true })
+      logger.warn('Join game failed', { groupChatId, userId, reason: errorMessage })
       return
     }
 
     const game = getGame(groupChatId)
     if (!game) {
-      await ctx.answerCallbackQuery('❌ Game not found')
+      await ctx.answerCallbackQuery({ text: '❌ Game not found', show_alert: true })
+      logger.error('Game disappeared after successful join', { groupChatId, userId })
       return
     }
 
-    await ctx.answerCallbackQuery(`✅ You joined the game!`)
+    await ctx.answerCallbackQuery({ text: `✅ You joined the game!`, show_alert: false })
 
     // Update the message with current players and start button if ready
     let messageText = `🎴 **Whot Game** 🎴\n\n` +
-      `🎯 Created by: ${game.players.length > 0 ? 'Creator' : 'Unknown'}\n` +
+      `🎯 Created by: Creator\n` +
       `👥 Players (${game.players.length}):\n`
 
     game.players.forEach((player, index) => {
@@ -91,17 +129,29 @@ export function handleJoinGame(bot: Bot) {
       reply_markup: keyboard,
       parse_mode: 'Markdown'
     })
+
+    logger.info('Join game successful', {
+      groupChatId,
+      totalPlayers: game.players.length,
+      gameState: game.state
+    })
   })
 }
 
 export function handleStartButton(bot: Bot) {
-  bot.callbackQuery(/^start_(\d+)$/, async (ctx) => {
-    const groupChatId = parseInt(ctx.match![1])
-    const userId = ctx.from.id
+  bot.callbackQuery(/^start_(-?\d+)$/, async (ctx) => {
+    const groupChatId = parseInt(ctx.match![1]);
+    const userId = ctx.from.id;
+
+    logger.info('Start game button clicked', { groupChatId, userId });
 
     if (!canStartGame(groupChatId, userId)) {
-      await ctx.answerCallbackQuery('❌ Only the game creator can start the game when ready!')
-      return
+      await ctx.answerCallbackQuery({ 
+        text: '❌ Only the game creator can start the game when ready!', 
+        show_alert: true 
+      });
+      logger.warn('Non-creator attempted to start game', { groupChatId, userId });
+      return;
     }
 
     const game = getGame(groupChatId)

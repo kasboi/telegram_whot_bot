@@ -1,11 +1,13 @@
 import { Bot } from "https://deno.land/x/grammy@v1.20.3/mod.ts"
 import { handleStartGame, handleJoinGame, handleStartButton } from './handlers/commands.ts'
+import { logger } from './utils/logger.ts'
+
 import "jsr:@std/dotenv/load"
 
 // Get bot token from environment
 const botToken = Deno.env.get('TELEGRAM_BOT_TOKEN')
 if (!botToken) {
-  console.error('❌ TELEGRAM_BOT_TOKEN environment variable is required')
+  logger.error('TELEGRAM_BOT_TOKEN environment variable is required')
   Deno.exit(1)
 }
 
@@ -27,20 +29,22 @@ bot.command('start', async (ctx) => {
       '🎯 Add me to a group chat and use /startgame to begin playing!\n' +
       '👥 You need at least 2 players to start a game.'
     )
+    logger.info('Start command in private chat', { userId: ctx.from?.id })
   } else {
     await ctx.reply(
       '🎴 Whot Game Bot is ready! 🎴\n\n' +
       '🚀 Use /startgame to create a new game in this group!'
     )
+    logger.info('Start command in group chat', { chatId: ctx.chat.id })
   }
 })
 
 // Error handling
 bot.catch((err) => {
-  console.error('Bot error:', err)
+  logger.error('Bot error occurred', { error: err.message, stack: err.stack })
 })
 
 // Start the bot
-console.log('🤖 Starting Whot Game Bot...')
-console.log('📱 Bot is running and waiting for messages')
+logger.info('Starting Whot Game Bot...')
+logger.info('Bot is running and waiting for messages')
 bot.start()
