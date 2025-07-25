@@ -3,6 +3,7 @@
 ## Stage 1 Complete: Foundation ✅
 
 ### What's Implemented:
+
 - ✅ Basic bot setup with grammY framework
 - ✅ `/startgame` command (group chats only)
 - ✅ Join game functionality with inline buttons
@@ -23,12 +24,14 @@
    ```
 
 ### Testing:
+
 1. Add the bot to a group chat
 2. Use `/startgame` to create a game
 3. Click "Join Game" to join (need 2+ players)
 4. Creator can click "Start Game" when ready
 
 ### Next Stage (Stage 2):
+
 - Card deck implementation
 - Deal cards to players
 - Basic card play mechanics
