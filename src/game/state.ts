@@ -1,6 +1,6 @@
 import { GameSession, GameState, Player } from '../types/game.ts'
 import { logger } from '../utils/logger.ts'
-import { createDeck, dealCards } from './cards.ts'
+import { createDeck, dealCards, canPlayCard } from './cards.ts'
 
 // Global game state storage (in-memory for MVP)
 export const gameState = new Map<number, GameSession>()
@@ -145,4 +145,124 @@ export function getTopCard(groupChatId: number) {
   }
 
   return game.discardPile[game.discardPile.length - 1]
+}
+
+// Advance to next player's turn
+function advanceTurn(groupChatId: number): void {
+  const game = gameState.get(groupChatId)
+  if (!game || game.currentPlayerIndex === undefined) {
+    return
+  }
+
+  // Simple clockwise turn advancement
+  game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
+
+  logger.info('Turn advanced', {
+    groupChatId,
+    newCurrentPlayer: game.players[game.currentPlayerIndex]?.firstName,
+    playerIndex: game.currentPlayerIndex
+  })
+}
+
+// Play a card from player's hand
+export function playCard(groupChatId: number, userId: number, cardId: string): { success: boolean; error?: string } {
+  const game = gameState.get(groupChatId)
+  if (!game || game.state !== 'in_progress') {
+    return { success: false, error: 'Game not found or not in progress' }
+  }
+
+  const currentPlayer = getCurrentPlayer(groupChatId)
+  if (!currentPlayer || currentPlayer.id !== userId) {
+    return { success: false, error: 'Not your turn' }
+  }
+
+  const player = game.players.find(p => p.id === userId)
+  if (!player || !player.hand) {
+    return { success: false, error: 'Player not found or has no hand' }
+  }
+
+  const cardIndex = player.hand.findIndex(c => c.id === cardId)
+  if (cardIndex === -1) {
+    return { success: false, error: 'Card not found in hand' }
+  }
+
+  const cardToPlay = player.hand[cardIndex]
+  const topCard = getTopCard(groupChatId)
+  if (!topCard) {
+    return { success: false, error: 'No top card found' }
+  }
+
+  // Validate the play using existing canPlayCard logic
+  if (!canPlayCard(cardToPlay, topCard)) {
+    return { success: false, error: 'Invalid play - card doesn\'t match top card' }
+  }
+
+  // Remove card from player's hand
+  player.hand.splice(cardIndex, 1)
+
+  // Add card to discard pile
+  if (!game.discardPile) {
+    game.discardPile = []
+  }
+  game.discardPile.push(cardToPlay)
+
+  // Check for win condition
+  if (player.hand.length === 0) {
+    player.state = 'winner'
+    game.state = 'ended'
+    logger.info('Player won the game', { groupChatId, userId, playerName: player.firstName })
+    return { success: true }
+  }
+
+  // Advance turn (basic implementation - no special cards yet)
+  advanceTurn(groupChatId)
+
+  logger.info('Card played successfully', {
+    groupChatId,
+    userId,
+    cardId: cardToPlay.id,
+    cardsRemaining: player.hand.length,
+    newTopCard: cardToPlay.id
+  })
+
+  return { success: true }
+}
+
+// Draw a card from the deck
+export function drawCard(groupChatId: number, userId: number): { success: boolean; error?: string; cardDrawn?: string } {
+  const game = gameState.get(groupChatId)
+  if (!game || game.state !== 'in_progress') {
+    return { success: false, error: 'Game not found or not in progress' }
+  }
+
+  const currentPlayer = getCurrentPlayer(groupChatId)
+  if (!currentPlayer || currentPlayer.id !== userId) {
+    return { success: false, error: 'Not your turn' }
+  }
+
+  const player = game.players.find(p => p.id === userId)
+  if (!player || !player.hand) {
+    return { success: false, error: 'Player not found or has no hand' }
+  }
+
+  if (!game.deck || game.deck.length === 0) {
+    return { success: false, error: 'No cards left in deck' }
+  }
+
+  // Draw the top card from deck
+  const drawnCard = game.deck.pop()!
+  player.hand.push(drawnCard)
+
+  // Advance turn after drawing
+  advanceTurn(groupChatId)
+
+  logger.info('Card drawn successfully', {
+    groupChatId,
+    userId,
+    cardDrawn: drawnCard.id,
+    cardsInHand: player.hand.length,
+    cardsInDeck: game.deck.length
+  })
+
+  return { success: true, cardDrawn: drawnCard.id }
 }

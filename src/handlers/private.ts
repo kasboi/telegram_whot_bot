@@ -1,5 +1,5 @@
 import { Bot, InlineKeyboard } from "https://deno.land/x/grammy@v1.37.0/mod.ts"
-import { getGame, getCurrentPlayer, getTopCard } from '../game/state.ts'
+import { getGame, getCurrentPlayer, getTopCard, playCard, drawCard } from '../game/state.ts'
 import { getValidCards, formatCard, getCardEmoji } from '../game/cards.ts'
 import { logger } from '../utils/logger.ts'
 
@@ -147,8 +147,38 @@ export function handleCardPlay(bot: Bot) {
       return
     }
 
-    // TODO: Implement actual card play logic
-    await ctx.answerCallbackQuery('🚧 Card play logic coming soon!')
+    // Play the card using game state logic
+    const result = playCard(groupChatId, userId, cardId)
+
+    if (!result.success) {
+      await ctx.answerCallbackQuery(`❌ ${result.error}`)
+      return
+    }
+
+    await ctx.answerCallbackQuery(`🎉 Played ${formatCard(cardToPlay)}!`)
+
+    // Update all players' hands to reflect turn change
+    await updateAllPlayerHands(bot, groupChatId)
+
+    // Announce play in group chat
+    try {
+      const game = getGame(groupChatId)
+      const newTopCard = getTopCard(groupChatId)
+      const currentPlayer = getCurrentPlayer(groupChatId)
+
+      let announceMessage = `🎴 **${userName}** played ${formatCard(cardToPlay)}\n`
+
+      if (game && game.state === 'ended') {
+        announceMessage += `\n🏆 **${userName} WINS!** 🏆\n\nGame over! 🎉`
+      } else {
+        announceMessage += `\n🃏 Top card: ${formatCard(newTopCard!)}\n`
+        announceMessage += `🎯 Current turn: **${currentPlayer?.firstName}**`
+      }
+
+      await bot.api.sendMessage(groupChatId, announceMessage, { parse_mode: 'Markdown' })
+    } catch (error) {
+      logger.error('Failed to announce card play', { groupChatId, userId, error })
+    }
 
     logger.info('Valid card play detected', { groupChatId, userId, cardId, cardSymbol: cardToPlay.symbol, cardNumber: cardToPlay.number })
   })
@@ -175,9 +205,41 @@ export function handleDrawCard(bot: Bot) {
       return
     }
 
-    // TODO: Implement actual draw card logic
-    await ctx.answerCallbackQuery('🚧 Draw card logic coming soon!')
+    // Draw a card using game state logic
+    const result = drawCard(groupChatId, userId)
+
+    if (!result.success) {
+      await ctx.answerCallbackQuery(`❌ ${result.error}`)
+      return
+    }
+
+    await ctx.answerCallbackQuery('🎴 Drew a card!')
+
+    // Update all players' hands to reflect turn change
+    await updateAllPlayerHands(bot, groupChatId)
+
+    // Announce draw in group chat
+    try {
+      const currentPlayer = getCurrentPlayer(groupChatId)
+      const announceMessage = `🎴 **${userName}** drew a card\n\n🎯 Current turn: **${currentPlayer?.firstName}**`
+
+      await bot.api.sendMessage(groupChatId, announceMessage, { parse_mode: 'Markdown' })
+    } catch (error) {
+      logger.error('Failed to announce card draw', { groupChatId, userId, error })
+    }
 
     logger.info('Valid draw card attempt', { groupChatId, userId })
   })
+}
+
+// Update all players' hands after a game state change
+export async function updateAllPlayerHands(bot: Bot, groupChatId: number) {
+  const game = getGame(groupChatId)
+  if (!game || game.state !== 'in_progress') {
+    return
+  }
+
+  for (const player of game.players) {
+    await sendPlayerHand(bot, groupChatId, player.id, player.firstName)
+  }
 }
