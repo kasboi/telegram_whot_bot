@@ -30,20 +30,13 @@ export function handleStartGame(bot: Bot) {
 
     // Create new game
     createGame(groupChatId, creatorId, creatorName)
-    logger.info('Game created', { groupChatId, creatorId, creatorName })
 
     // Automatically add the creator to the game
     addPlayer(groupChatId, creatorId, creatorName)
-    logger.info('Creator auto-joined game', { groupChatId, creatorId, creatorName })
 
     // Create join button
     const keyboard = new InlineKeyboard()
       .text('🃏 Join Game', `join_${groupChatId}`)
-
-    logger.info('Creating join button with callback data', {
-      callbackData: `join_${groupChatId}`,
-      groupChatId
-    })
 
     await ctx.reply(
       `🎴 **Whot Game Started!** 🎴\n\n` +

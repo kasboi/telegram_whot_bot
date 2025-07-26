@@ -107,9 +107,9 @@ export function canPlayCardWithChosen(cardToPlay: Card, topCard: Card, chosenSym
     return true
   }
 
-  // If the top card is a Whot with a chosen symbol, use the chosen symbol
+  // If the top card is a Whot with a chosen symbol, only match the chosen symbol
   if (topCard.symbol === 'whot' && chosenSymbol) {
-    return cardToPlay.symbol === chosenSymbol || cardToPlay.number === topCard.number
+    return cardToPlay.symbol === chosenSymbol
   }
 
   // Regular cards: must match symbol or number

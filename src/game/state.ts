@@ -16,7 +16,12 @@ export function createGame(groupChatId: number, creatorId: number, creatorName: 
   }
 
   gameState.set(groupChatId, newGame)
-  logger.info('Game created', { groupChatId, creatorId, creatorName })
+  logger.info('Game created', {
+    groupChatId,
+    creatorId,
+    creatorName,
+    timestamp: new Date().toISOString()
+  })
   return newGame
 }
 
@@ -50,12 +55,22 @@ export function addPlayer(groupChatId: number, userId: number, firstName: string
   }
 
   game.players.push(newPlayer)
-  logger.info('Player joined game', { groupChatId, userId, firstName, totalPlayers: game.players.length })
+  logger.info('Player joined game', {
+    groupChatId,
+    userId,
+    firstName,
+    totalPlayers: game.players.length,
+    playersList: game.players.map(p => p.firstName)
+  })
 
   // Game ready to start if we have 2+ players
   if (game.players.length >= 2) {
     game.state = 'ready_to_start'
-    logger.info('Game ready to start', { groupChatId, totalPlayers: game.players.length })
+    logger.info('Game state: ready_to_start', {
+      groupChatId,
+      totalPlayers: game.players.length,
+      players: game.players.map(p => p.firstName)
+    })
   }
 
   return true
@@ -119,12 +134,13 @@ export function startGameWithCards(groupChatId: number): boolean {
     player.state = 'active'
   })
 
-  logger.info('Game started with cards', {
+  logger.info('Game state: in_progress', {
     groupChatId,
     totalPlayers: game.players.length,
     cardsInDeck: remainingDeck.length,
-    topCard: discardPile[0]?.id,
-    currentPlayer: game.players[0]?.firstName
+    topCard: { id: discardPile[0]?.id, symbol: discardPile[0]?.symbol, number: discardPile[0]?.number },
+    currentPlayer: game.players[0]?.firstName,
+    playerHands: game.players.map(p => ({ name: p.firstName, cardCount: p.hand?.length || 0 }))
   })
 
   return true
@@ -198,45 +214,56 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
 
   // Handle special card effects
   const effect = getCardEffect(cardToPlay)
+  let effectDescription = ''
 
   if (effect) {
     if (effect.type === 'pick_cards') {
       // If there's already a pending pick effect and this card stacks, add to it
       if (game.pendingEffect && game.pendingEffect.type === 'pick_cards') {
+        const previousAmount = game.pendingEffect.amount
         game.pendingEffect.amount += effect.pickAmount!
+        effectDescription = `Stacked pick effect: ${previousAmount} + ${effect.pickAmount} = ${game.pendingEffect.amount} cards`
       } else {
         game.pendingEffect = {
           type: 'pick_cards',
           amount: effect.pickAmount!,
           targetPlayerIndex: (game.currentPlayerIndex + 1) % game.players.length
         }
+        effectDescription = `Applied pick effect: ${effect.pickAmount} cards to ${game.players[game.pendingEffect.targetPlayerIndex].firstName}`
       }
     } else if (effect.type === 'extra_turn') {
-      // Player gets another turn - don't advance turn
-      logger.info(`Player ${player.firstName} played Hold On - gets another turn`)
+      effectDescription = 'Hold On - Player gets extra turn'
     } else if (effect.type === 'skip_turn') {
       // Skip the next player
+      const skippedPlayer = game.players[(game.currentPlayerIndex + 1) % game.players.length]
       game.currentPlayerIndex = (game.currentPlayerIndex + 2) % game.players.length
-      logger.info(`Player ${player.firstName} played Suspension - next player is skipped`)
+      effectDescription = `Suspension - Skipped ${skippedPlayer.firstName}'s turn`
     } else if (effect.type === 'general_market') {
       // All other players draw one card
+      let playersWhoGotCards = []
       for (let i = 0; i < game.players.length; i++) {
         if (i !== game.currentPlayerIndex) {
           const drawnCard = game.deck!.pop()
           if (drawnCard) {
             game.players[i].hand!.push(drawnCard)
+            playersWhoGotCards.push(game.players[i].firstName)
           }
         }
       }
-      logger.info(`Player ${player.firstName} played General Market - all other players draw a card`)
+      effectDescription = `General Market - ${playersWhoGotCards.join(', ')} drew cards`
     } else if (effect.type === 'choose_symbol') {
-      // Whot card requires symbol selection - don't advance turn yet
-      // The turn will advance after symbol is chosen
-      logger.info(`Player ${player.firstName} played Whot - needs to choose symbol`)
-      const cardDescription = cardToPlay.number === 20 ? 'Whot' : `${cardToPlay.symbol} ${cardToPlay.number}`
-      logger.info(`Player ${player.firstName} played ${cardDescription}`)
+      effectDescription = 'Whot - Requires symbol selection'
 
-      return { success: true, message: `Played ${cardDescription}`, requiresSymbolChoice: true }
+      logger.info('Card played', {
+        groupChatId,
+        player: player.firstName,
+        card: { symbol: cardToPlay.symbol, number: cardToPlay.number, id: cardToPlay.id },
+        effect: effectDescription,
+        remainingCards: player.hand!.length,
+        requiresSymbolChoice: true
+      })
+
+      return { success: true, message: `Played ${cardToPlay.symbol} ${cardToPlay.number}`, requiresSymbolChoice: true }
     }
   }
 
@@ -244,11 +271,17 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
   if (player.hand!.length === 0) {
     game.state = 'ended'
     game.winner = player
-    logger.info(`Game ${groupChatId} ended - winner: ${player.firstName}`)
+    logger.info('Game ended', {
+      groupChatId,
+      winner: player.firstName,
+      finalPlayerCounts: game.players.map(p => ({ name: p.firstName, cards: p.hand?.length || 0 })),
+      totalTurns: game.playedCards?.length || 0
+    })
     return { success: true, message: `${player.firstName} wins!`, gameEnded: true, winner: player }
   }
 
   // Advance turn only if it's not a Hold On card
+  let nextPlayer = ''
   if (!effect || effect.type !== 'extra_turn') {
     // If there's a pending effect and the next player must handle it
     if (game.pendingEffect && game.pendingEffect.type === 'pick_cards') {
@@ -257,11 +290,22 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
       // Normal turn advancement (skip_turn already handled above)
       game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
     }
+    nextPlayer = game.players[game.currentPlayerIndex].firstName
+  } else {
+    nextPlayer = player.firstName // Same player keeps turn
   }
 
-  const cardDescription = cardToPlay.number === 20 ? 'Whot' : `${cardToPlay.symbol} ${cardToPlay.number}`
-  logger.info(`Player ${player.firstName} played ${cardDescription}`)
+  logger.info('Card played', {
+    groupChatId,
+    player: player.firstName,
+    card: { symbol: cardToPlay.symbol, number: cardToPlay.number, id: cardToPlay.id },
+    effect: effectDescription || 'None',
+    remainingCards: player.hand!.length,
+    nextPlayer,
+    pendingEffect: game.pendingEffect ? `${game.pendingEffect.type}: ${game.pendingEffect.amount}` : 'None'
+  })
 
+  const cardDescription = cardToPlay.number === 20 ? 'Whot' : `${cardToPlay.symbol} ${cardToPlay.number}`
   return { success: true, message: `Played ${cardDescription}` }
 }
 
@@ -282,6 +326,11 @@ export function drawCard(groupChatId: number, userId: number): { success: boolea
   }
 
   if (game.deck!.length === 0) {
+    logger.error('Deck exhausted during card draw', {
+      groupChatId,
+      player: player.firstName,
+      playersHandSizes: game.players.map(p => ({ name: p.firstName, cards: p.hand?.length || 0 }))
+    })
     return { success: false, message: "No more cards in deck" }
   }
 
@@ -299,12 +348,22 @@ export function drawCard(groupChatId: number, userId: number): { success: boolea
 
     // Clear the pending effect and advance turn
     game.pendingEffect = undefined
-    game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
+    const nextPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
+    game.currentPlayerIndex = nextPlayerIndex
+    const nextPlayer = game.players[nextPlayerIndex]
 
-    logger.info(`Player ${player.firstName} drew ${cardsToDraw} cards due to pending effect`)
+    logger.info('Penalty cards drawn', {
+      groupChatId,
+      player: player.firstName,
+      cardsDrawn: cardsToDraw,
+      newHandSize: player.hand!.length,
+      nextPlayer: nextPlayer.firstName,
+      reason: 'pending_effect'
+    })
+
     return {
       success: true,
-      message: `Drew ${cardsToDraw} cards`,
+      message: `Drew ${cardsToDraw} cards due to pending effect`,
       cardDrawn: drawnCards[0] // Return first card for display
     }
   }
@@ -313,10 +372,29 @@ export function drawCard(groupChatId: number, userId: number): { success: boolea
   const drawnCard = game.deck!.pop()!
   player.hand!.push(drawnCard)
 
-  // Advance turn after drawing a card
-  game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
+  // Log warning if deck is getting low
+  if (game.deck!.length <= 5) {
+    logger.warn('Deck running low', {
+      groupChatId,
+      cardsRemaining: game.deck!.length,
+      totalPlayersCards: game.players.reduce((sum, p) => sum + (p.hand?.length || 0), 0)
+    })
+  }
 
-  logger.info(`Player ${player.firstName} drew a card`)
+  // Advance turn after drawing a card
+  const nextPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
+  game.currentPlayerIndex = nextPlayerIndex
+  const nextPlayer = game.players[nextPlayerIndex]
+
+  logger.info('Card drawn', {
+    groupChatId,
+    player: player.firstName,
+    cardDrawn: { symbol: drawnCard.symbol, number: drawnCard.number },
+    newHandSize: player.hand!.length,
+    nextPlayer: nextPlayer.firstName,
+    reason: 'voluntary'
+  })
+
   return { success: true, message: "Drew a card", cardDrawn: drawnCard }
 }
 
@@ -345,10 +423,19 @@ export function selectWhotSymbol(groupChatId: number, userId: number, selectedSy
   // Update the last played card's symbol (treat Whot as having the chosen symbol)
   if (game.lastPlayedCard && game.lastPlayedCard.number === 20) {
     game.chosenSymbol = selectedSymbol
-    logger.info(`Player ${player.firstName} chose symbol: ${selectedSymbol}`)
 
     // Now advance the turn
-    game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
+    const nextPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
+    game.currentPlayerIndex = nextPlayerIndex
+    const nextPlayer = game.players[nextPlayerIndex]
+
+    logger.info('Whot symbol selected', {
+      groupChatId,
+      player: player.firstName,
+      selectedSymbol,
+      nextPlayer: nextPlayer.firstName,
+      chosenSymbolActive: true
+    })
 
     return { success: true, message: `Symbol ${selectedSymbol} selected` }
   }

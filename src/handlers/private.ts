@@ -7,19 +7,19 @@ import { logger } from '../utils/logger.ts'
 export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: number, firstName: string): Promise<boolean> {
   const game = getGame(groupChatId)
   if (!game || game.state !== 'in_progress') {
-    logger.warn('Attempted to send hand for invalid game', { groupChatId, userId })
+    logger.warn('Invalid hand request', { groupChatId, userId, gameState: game?.state || 'not_found' })
     return false
   }
 
   const player = game.players.find(p => p.id === userId)
   if (!player || !player.hand) {
-    logger.warn('Player not found or has no hand', { groupChatId, userId })
+    logger.warn('Player hand unavailable', { groupChatId, userId, playerFound: !!player, hasHand: !!player?.hand })
     return false
   }
 
   const topCard = getTopCard(groupChatId)
   if (!topCard) {
-    logger.warn('No top card found', { groupChatId })
+    logger.error('Missing top card', { groupChatId, discardPileSize: game.discardPile?.length || 0 })
     return false
   }
 
@@ -111,18 +111,18 @@ export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: numb
       parse_mode: 'Markdown'
     })
 
-    logger.info('Hand sent to player', {
+    logger.info('Hand sent', {
       groupChatId,
       userId,
       firstName,
-      cardCount: player.hand.length,
-      validPlays: validCards.length,
+      handSize: player.hand.length,
+      validMoves: validCards.length,
       isPlayerTurn
     })
 
     return true // Success
   } catch (error) {
-    logger.error('Failed to send hand to player', {
+    logger.error('Hand delivery failed', {
       groupChatId,
       userId,
       error: error instanceof Error ? error.message : String(error)
@@ -139,8 +139,6 @@ export function handleCardPlay(bot: Bot) {
     const cardId = ctx.match![2]
     const userId = ctx.from.id
     const userName = ctx.from.first_name || 'Unknown'
-
-    logger.info('Card play attempted', { groupChatId, userId, cardId, userName })
 
     const game = getGame(groupChatId)
     if (!game || game.state !== 'in_progress') {
@@ -228,10 +226,8 @@ export function handleCardPlay(bot: Bot) {
 
       await bot.api.sendMessage(groupChatId, announceMessage, { parse_mode: 'Markdown' })
     } catch (error) {
-      logger.error('Failed to announce card play', { groupChatId, userId, error })
+      logger.error('Announcement failed', { groupChatId, userId, error: error instanceof Error ? error.message : String(error) })
     }
-
-    logger.info('Valid card play detected', { groupChatId, userId, cardId, cardSymbol: cardToPlay.symbol, cardNumber: cardToPlay.number })
   })
 }
 
@@ -241,8 +237,6 @@ export function handleDrawCard(bot: Bot) {
     const groupChatId = parseInt(ctx.match![1])
     const userId = ctx.from.id
     const userName = ctx.from.first_name || 'Unknown'
-
-    logger.info('Draw card attempted', { groupChatId, userId, userName })
 
     const game = getGame(groupChatId)
     if (!game || game.state !== 'in_progress') {
@@ -299,10 +293,8 @@ export function handleDrawCard(bot: Bot) {
 
       await bot.api.sendMessage(groupChatId, announceMessage, { parse_mode: 'Markdown' })
     } catch (error) {
-      logger.error('Failed to announce card draw', { groupChatId, userId, error })
+      logger.error('Announcement failed', { groupChatId, userId, error: error instanceof Error ? error.message : String(error) })
     }
-
-    logger.info('Valid draw card attempt', { groupChatId, userId })
   })
 }
 
@@ -349,8 +341,6 @@ export function handleSymbolSelection(bot: Bot) {
     const userId = ctx.from.id
     const userName = ctx.from.first_name || 'Unknown'
 
-    logger.info('Symbol selection attempted', { groupChatId, userId, selectedSymbol, userName })
-
     const result = selectWhotSymbol(groupChatId, userId, selectedSymbol)
 
     if (!result.success) {
@@ -382,10 +372,8 @@ export function handleSymbolSelection(bot: Bot) {
 
       await bot.api.sendMessage(groupChatId, announceMessage, { parse_mode: 'Markdown' })
     } catch (error) {
-      logger.error('Failed to announce symbol selection', { groupChatId, userId, error })
+      logger.error('Announcement failed', { groupChatId, userId, error: error instanceof Error ? error.message : String(error) })
     }
-
-    logger.info('Symbol selection successful', { groupChatId, userId, selectedSymbol })
   })
 }
 
