@@ -1,5 +1,5 @@
-import { Bot, InlineKeyboard } from "https://deno.land/x/grammy@v1.37.0/mod.ts"
-import { getGame, getCurrentPlayer, getTopCard, playCard, drawCard } from '../game/state.ts'
+import { Bot, InlineKeyboard } from 'https://deno.land/x/grammy@v1.37.0/mod.ts'
+import { getGame, getCurrentPlayer, getTopCard, playCard, drawCard, selectWhotSymbol } from '../game/state.ts'
 import { getValidCards, formatCard, getCardEmoji } from '../game/cards.ts'
 import { logger } from '../utils/logger.ts'
 
@@ -27,13 +27,32 @@ export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: numb
   const isPlayerTurn = currentPlayer?.id === userId
 
   // Get valid cards that can be played
-  const validCards = getValidCards(player.hand, topCard)
+  const validCards = getValidCards(player.hand, topCard, game.chosenSymbol)
 
   let messageText = `🎴 **Your Whot Hand** 🎴\n\n`
   messageText += `🃏 Top card: ${formatCard(topCard)}\n`
   messageText += `👤 Cards in hand: ${player.hand.length}\n\n`
 
-  if (isPlayerTurn) {
+  // Check for pending effects
+  if (isPlayerTurn && game.pendingEffect) {
+    if (game.pendingEffect.type === 'pick_cards') {
+      const cardCount = game.pendingEffect.amount
+      const stackMessage = cardCount > 2 && cardCount > 3 ? ` (stacked effect!)` : ''
+      messageText += `⚠️ **PENALTY EFFECT!**${stackMessage}\n`
+      messageText += `📥 You must play a Pick card or draw ${cardCount} cards\n\n`
+
+      // Show only cards that can counter the effect
+      const counterCards = validCards.filter(card =>
+        card.number === 2 || card.number === 5 || card.number === 20
+      )
+
+      if (counterCards.length > 0) {
+        messageText += `💚 You can counter with ${counterCards.length} card(s) or accept penalty\n\n`
+      } else {
+        messageText += `❌ No counter cards - click Draw to accept penalty\n\n`
+      }
+    }
+  } else if (isPlayerTurn) {
     messageText += `🎯 **YOUR TURN!**\n`
     if (validCards.length > 0) {
       messageText += `💚 You can play ${validCards.length} card(s) or draw a card\n\n`
@@ -49,9 +68,19 @@ export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: numb
   // Create keyboard with card buttons
   const keyboard = new InlineKeyboard()
 
+  // Determine which cards to show
+  let cardsToShow = player.hand
+  if (isPlayerTurn && game.pendingEffect && game.pendingEffect.type === 'pick_cards') {
+    // During pick effects, only show cards that can counter (Pick Two/Three or Whot)
+    const counterCards = player.hand.filter(card =>
+      card.number === 2 || card.number === 5 || card.number === 20
+    )
+    cardsToShow = counterCards.length > 0 ? counterCards : player.hand
+  }
+
   // Add cards in rows of 3
-  for (let i = 0; i < player.hand.length; i += 3) {
-    const row = player.hand.slice(i, i + 3)
+  for (let i = 0; i < cardsToShow.length; i += 3) {
+    const row = cardsToShow.slice(i, i + 3)
 
     row.forEach((card, index) => {
       const canPlay = isPlayerTurn && validCards.some(vc => vc.id === card.id)
@@ -63,8 +92,10 @@ export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: numb
       } else {
         keyboard.text(buttonText, `play_${groupChatId}_${card.id}`)
       }
-    })    // Start new row after every 3 cards (except for last row)
-    if (i + 3 < player.hand.length) {
+    })
+
+    // Start new row after every 3 cards (except for last row)
+    if (i + 3 < cardsToShow.length) {
       keyboard.row()
     }
   }
@@ -158,6 +189,13 @@ export function handleCardPlay(bot: Bot) {
       return
     }
 
+    // Check if Whot card was played and needs symbol selection
+    if (result.requiresSymbolChoice) {
+      await ctx.answerCallbackQuery(`🃏 Whot played! Choose a symbol`)
+      await showSymbolSelection(bot, userId, groupChatId)
+      return
+    }
+
     await ctx.answerCallbackQuery(`🎉 Played ${formatCard(cardToPlay)}!`)
 
     // Update all players' hands to reflect turn change
@@ -169,13 +207,23 @@ export function handleCardPlay(bot: Bot) {
       const newTopCard = getTopCard(groupChatId)
       const currentPlayer = getCurrentPlayer(groupChatId)
 
-      let announceMessage = `🎴 **${userName}** played ${formatCard(cardToPlay)}\n`
+      let announceMessage = ''
 
       if (game && game.state === 'ended') {
-        announceMessage += `\n🏆 **${userName} WINS!** 🏆\n\nGame over! 🎉`
+        announceMessage = `� **${userName} WINS!** 🏆\n\nGame over! 🎉`
       } else {
-        announceMessage += `\n🃏 Top card: ${formatCard(newTopCard!)}\n`
-        announceMessage += `🎯 Current turn: **${currentPlayer?.firstName}**`
+        // Get target player for special effects
+        const nextPlayerIndex = (game!.players.findIndex(p => p.id === userId) + 1) % game!.players.length
+        const targetPlayer = game!.players[nextPlayerIndex]
+
+        // Use special card message
+        announceMessage = getSpecialCardMessage(cardToPlay, userName, targetPlayer.firstName, game!.pendingEffect)
+
+        announceMessage += `\n\n🃏 Top card: ${formatCard(newTopCard!)}`
+
+        if (!result.requiresSymbolChoice) {
+          announceMessage += `\n🎯 Current turn: **${currentPlayer?.firstName}**`
+        }
       }
 
       await bot.api.sendMessage(groupChatId, announceMessage, { parse_mode: 'Markdown' })
@@ -216,7 +264,29 @@ export function handleDrawCard(bot: Bot) {
       return
     }
 
-    await ctx.answerCallbackQuery('🎴 Drew a card!')
+    // Check if this was a penalty draw or normal draw
+    const gameState = getGame(groupChatId)
+    const wasPenalty = result.message.includes('due to pending effect')
+
+    if (wasPenalty) {
+      // Extract number of cards from message
+      const cardCount = result.message.match(/(\d+)/)?.[1] || '?'
+      await ctx.answerCallbackQuery(`📥 Drew ${cardCount} cards (penalty)`)
+
+      // Announce penalty in group
+      try {
+        const currentPlayer = getCurrentPlayer(groupChatId)
+        const topCard = getTopCard(groupChatId)
+        await bot.api.sendMessage(groupChatId,
+          `📥 **${userName}** drew ${cardCount} cards due to special effect\n\n🃏 Top card: ${formatCard(topCard!)}\n🎯 Current turn: **${currentPlayer?.firstName}**`,
+          { parse_mode: 'Markdown' }
+        )
+      } catch (error) {
+        logger.error('Failed to announce penalty draw', { groupChatId, userId, error })
+      }
+    } else {
+      await ctx.answerCallbackQuery('🎴 Drew a card!')
+    }
 
     // Update all players' hands to reflect turn change
     await updateAllPlayerHands(bot, groupChatId)
@@ -224,7 +294,8 @@ export function handleDrawCard(bot: Bot) {
     // Announce draw in group chat
     try {
       const currentPlayer = getCurrentPlayer(groupChatId)
-      const announceMessage = `🎴 **${userName}** drew a card\n\n🎯 Current turn: **${currentPlayer?.firstName}**`
+      const topCard = getTopCard(groupChatId)
+      const announceMessage = `🎴 **${userName}** drew a card\n\n🃏 Top card: ${formatCard(topCard!)}\n🎯 Current turn: **${currentPlayer?.firstName}**`
 
       await bot.api.sendMessage(groupChatId, announceMessage, { parse_mode: 'Markdown' })
     } catch (error) {
@@ -245,4 +316,100 @@ export async function updateAllPlayerHands(bot: Bot, groupChatId: number) {
   for (const player of game.players) {
     await sendPlayerHand(bot, groupChatId, player.id, player.firstName)
   }
+}
+
+// Show symbol selection interface for Whot cards
+async function showSymbolSelection(bot: Bot, userId: number, groupChatId: number): Promise<void> {
+  const keyboard = new InlineKeyboard()
+    .text('⚪ Circle', `symbol_${groupChatId}_circle`)
+    .text('🔺 Triangle', `symbol_${groupChatId}_triangle`)
+    .row()
+    .text('✖️ Cross', `symbol_${groupChatId}_cross`)
+    .text('🟦 Square', `symbol_${groupChatId}_square`)
+    .row()
+    .text('⭐ Star', `symbol_${groupChatId}_star`)
+
+  const message = `🃏 **Whot Card Played!**\n\nChoose the new symbol for the next player:`
+
+  try {
+    await bot.api.sendMessage(userId, message, {
+      reply_markup: keyboard,
+      parse_mode: 'Markdown'
+    })
+  } catch (error) {
+    logger.error('Failed to send symbol selection', { userId, groupChatId, error })
+  }
+}
+
+// Handle symbol selection for Whot cards
+export function handleSymbolSelection(bot: Bot) {
+  bot.callbackQuery(/^symbol_(-?\d+)_(\w+)$/, async (ctx) => {
+    const groupChatId = parseInt(ctx.match![1])
+    const selectedSymbol = ctx.match![2]
+    const userId = ctx.from.id
+    const userName = ctx.from.first_name || 'Unknown'
+
+    logger.info('Symbol selection attempted', { groupChatId, userId, selectedSymbol, userName })
+
+    const result = selectWhotSymbol(groupChatId, userId, selectedSymbol)
+
+    if (!result.success) {
+      await ctx.answerCallbackQuery(`❌ ${result.message}`)
+      return
+    }
+
+    await ctx.answerCallbackQuery(`🎯 Symbol ${selectedSymbol} selected!`)
+
+    // Update all players' hands to reflect turn change
+    await updateAllPlayerHands(bot, groupChatId)
+
+    // Announce symbol selection in group chat
+    try {
+      const currentPlayer = getCurrentPlayer(groupChatId)
+      const newTopCard = getTopCard(groupChatId)
+
+      const symbolEmojis: Record<string, string> = {
+        circle: '⚪',
+        triangle: '🔺',
+        cross: '✖️',
+        square: '🟦',
+        star: '⭐'
+      }
+
+      const announceMessage = `🃏 **${userName}** played Whot and chose **${symbolEmojis[selectedSymbol]} ${selectedSymbol}**\n\n` +
+        `🃏 Top card: ${formatCard(newTopCard!)}\n` +
+        `🎯 Current turn: **${currentPlayer?.firstName}**`
+
+      await bot.api.sendMessage(groupChatId, announceMessage, { parse_mode: 'Markdown' })
+    } catch (error) {
+      logger.error('Failed to announce symbol selection', { groupChatId, userId, error })
+    }
+
+    logger.info('Symbol selection successful', { groupChatId, userId, selectedSymbol })
+  })
+}
+
+// Get special card effect message for public announcements
+function getSpecialCardMessage(cardToPlay: Card, playerName: string, targetPlayerName?: string, pendingEffect?: { type: string; amount: number }): string {
+  const cardEmoji = getCardEmoji(cardToPlay)
+
+  if (cardToPlay.number === 1) {
+    return `🔄 **${playerName}** played Hold On ${cardEmoji} ${cardToPlay.number} - gets another turn!`
+  } else if (cardToPlay.number === 2) {
+    const totalCards = pendingEffect ? pendingEffect.amount : 2
+    const stackMessage = pendingEffect && pendingEffect.amount > 2 ? ` (stacked to ${totalCards} cards!)` : ''
+    return `📥 **${playerName}** played Pick Two ${cardEmoji} ${cardToPlay.number}${stackMessage} - **${targetPlayerName}** must counter or draw ${totalCards} cards`
+  } else if (cardToPlay.number === 5) {
+    const totalCards = pendingEffect ? pendingEffect.amount : 3
+    const stackMessage = pendingEffect && pendingEffect.amount > 3 ? ` (stacked to ${totalCards} cards!)` : ''
+    return `📥 **${playerName}** played Pick Three ${cardEmoji} ${cardToPlay.number}${stackMessage} - **${targetPlayerName}** must counter or draw ${totalCards} cards`
+  } else if (cardToPlay.number === 8) {
+    return `⏭️ **${playerName}** played Suspension ${cardEmoji} ${cardToPlay.number} - **${targetPlayerName}** is skipped!`
+  } else if (cardToPlay.number === 14) {
+    return `🏪 **${playerName}** played General Market ${cardEmoji} ${cardToPlay.number} - all other players draw 1 card`
+  } else if (cardToPlay.number === 20) {
+    return `🃏 **${playerName}** played Whot ${cardEmoji} ${cardToPlay.number} - choose new symbol`
+  }
+
+  return `🎴 **${playerName}** played ${cardEmoji} ${cardToPlay.number}`
 }

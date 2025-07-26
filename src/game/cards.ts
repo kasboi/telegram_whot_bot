@@ -100,9 +100,25 @@ export function canPlayCard(cardToPlay: Card, topCard: Card): boolean {
   return cardToPlay.symbol === topCard.symbol || cardToPlay.number === topCard.number
 }
 
+// Check if a card can be played considering chosen Whot symbol
+export function canPlayCardWithChosen(cardToPlay: Card, topCard: Card, chosenSymbol?: string): boolean {
+  // Whot cards can always be played
+  if (cardToPlay.symbol === 'whot') {
+    return true
+  }
+
+  // If the top card is a Whot with a chosen symbol, use the chosen symbol
+  if (topCard.symbol === 'whot' && chosenSymbol) {
+    return cardToPlay.symbol === chosenSymbol || cardToPlay.number === topCard.number
+  }
+
+  // Regular cards: must match symbol or number
+  return cardToPlay.symbol === topCard.symbol || cardToPlay.number === topCard.number
+}
+
 // Get valid cards that can be played from a hand
-export function getValidCards(hand: Card[], topCard: Card): Card[] {
-  return hand.filter(card => canPlayCard(card, topCard))
+export function getValidCards(hand: Card[], topCard: Card, chosenSymbol?: string): Card[] {
+  return hand.filter(card => canPlayCardWithChosen(card, topCard, chosenSymbol))
 }
 
 // Format card for display

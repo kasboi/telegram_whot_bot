@@ -1,6 +1,6 @@
 import { GameSession, Player, Card } from '../types/game.ts'
 import { logger } from '../utils/logger.ts'
-import { createDeck, dealCards, canPlayCard } from './cards.ts'
+import { createDeck, dealCards, canPlayCardWithChosen } from './cards.ts'
 import { getCardEffect, canPlayDuringEffect } from './special.ts'
 
 // Global game state storage (in-memory for MVP)
@@ -151,7 +151,7 @@ export function getTopCard(groupChatId: number) {
 }
 
 // Play a card from player's hand
-export function playCard(groupChatId: number, userId: number, cardIndex: number): { success: boolean; message: string; gameEnded?: boolean; winner?: Player } {
+export function playCard(groupChatId: number, userId: number, cardIndex: number): { success: boolean; message: string; gameEnded?: boolean; winner?: Player; requiresSymbolChoice?: boolean } {
   const game = gameState.get(groupChatId)
   if (!game || game.state !== 'in_progress') {
     return { success: false, message: "No active game found" }
@@ -175,7 +175,7 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
   // Check if this is a valid play (considering pending effects)
   const canPlay = game.pendingEffect
     ? canPlayDuringEffect(cardToPlay, game.pendingEffect)
-    : canPlayCard(cardToPlay, game.lastPlayedCard!)
+    : canPlayCardWithChosen(cardToPlay, game.lastPlayedCard!, game.chosenSymbol)
 
   if (!canPlay) {
     const lastCard = game.lastPlayedCard!
@@ -192,6 +192,9 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
   game.lastPlayedCard = cardToPlay
   if (!game.playedCards) game.playedCards = []
   game.playedCards.push(cardToPlay)
+
+  // Update discard pile to reflect the new top card
+  game.discardPile.push(cardToPlay)
 
   // Handle special card effects
   const effect = getCardEffect(cardToPlay)
@@ -227,9 +230,13 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
       }
       logger.info(`Player ${player.firstName} played General Market - all other players draw a card`)
     } else if (effect.type === 'choose_symbol') {
-      // Whot card requires symbol selection - this will be handled by the callback handler
-      // For now, just log it
+      // Whot card requires symbol selection - don't advance turn yet
+      // The turn will advance after symbol is chosen
       logger.info(`Player ${player.firstName} played Whot - needs to choose symbol`)
+      const cardDescription = cardToPlay.number === 20 ? 'Whot' : `${cardToPlay.symbol} ${cardToPlay.number}`
+      logger.info(`Player ${player.firstName} played ${cardDescription}`)
+
+      return { success: true, message: `Played ${cardDescription}`, requiresSymbolChoice: true }
     }
   }
 
@@ -306,6 +313,45 @@ export function drawCard(groupChatId: number, userId: number): { success: boolea
   const drawnCard = game.deck!.pop()!
   player.hand!.push(drawnCard)
 
+  // Advance turn after drawing a card
+  game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
+
   logger.info(`Player ${player.firstName} drew a card`)
   return { success: true, message: "Drew a card", cardDrawn: drawnCard }
+}
+
+// Handle Whot symbol selection
+export function selectWhotSymbol(groupChatId: number, userId: number, selectedSymbol: string): { success: boolean; message: string } {
+  const game = gameState.get(groupChatId)
+  if (!game || game.state !== 'in_progress') {
+    return { success: false, message: "No active game found" }
+  }
+
+  const player = game.players.find(p => p.id === userId)
+  if (!player) {
+    return { success: false, message: "Player not found in this game" }
+  }
+
+  if (game.currentPlayerIndex !== game.players.indexOf(player)) {
+    return { success: false, message: "It's not your turn" }
+  }
+
+  // Validate symbol
+  const validSymbols = ['circle', 'triangle', 'cross', 'square', 'star']
+  if (!validSymbols.includes(selectedSymbol)) {
+    return { success: false, message: "Invalid symbol selected" }
+  }
+
+  // Update the last played card's symbol (treat Whot as having the chosen symbol)
+  if (game.lastPlayedCard && game.lastPlayedCard.number === 20) {
+    game.chosenSymbol = selectedSymbol
+    logger.info(`Player ${player.firstName} chose symbol: ${selectedSymbol}`)
+
+    // Now advance the turn
+    game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
+
+    return { success: true, message: `Symbol ${selectedSymbol} selected` }
+  }
+
+  return { success: false, message: "No Whot card to select symbol for" }
 }
