@@ -173,7 +173,7 @@ export function handleCardPlay(bot: Bot) {
       return
     }
 
-    const validCards = getValidCards(player.hand, topCard)
+    const validCards = getValidCards(player.hand, topCard, game.chosenSymbol)
     if (!validCards.some(c => c.id === cardId)) {
       await ctx.answerCallbackQuery('❌ Invalid play - card doesn\'t match top card')
       return
