@@ -31,8 +31,36 @@ export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: numb
   const validCards = getValidCards(player.hand, topCard, game.chosenSymbol)
 
   let messageText = `🎴 **Your Whot Hand** 🎴\n\n`
-  messageText += `🃏 Top card: ${formatCard(topCard)}\n`
-  messageText += `👤 Cards in hand: ${player.hand.length}\n\n`
+
+  // Add game state information (same as group chat)
+  messageText += `👥 **Game Status:**\n`
+  game.players.forEach((p, index) => {
+    const isCurrentPlayer = index === game.currentPlayerIndex
+    const turnIndicator = isCurrentPlayer ? '👉' : '✅'
+    const isThisPlayer = p.id === userId ? ' (YOU)' : ''
+    messageText += `${index + 1}. ${p.firstName}${isThisPlayer} ${turnIndicator} (${p.hand?.length || 0} cards)\n`
+  })
+
+  messageText += `\n🃏 Top card: ${formatCard(topCard)}\n`
+
+  // Show chosen symbol if active
+  if (game.chosenSymbol) {
+    const symbolEmojis: Record<string, string> = {
+      circle: '⚪',
+      triangle: '🔺',
+      cross: '✖️',
+      square: '🟦',
+      star: '⭐'
+    }
+    messageText += `🎯 Active symbol: ${symbolEmojis[game.chosenSymbol]} ${game.chosenSymbol}\n`
+  }
+
+  messageText += `👤 Your cards: ${player.hand.length}\n\n`
+
+  // Show last game action (same as public announcements)
+  if (game.lastActionMessage) {
+    messageText += `📢 **Latest Action:**\n${game.lastActionMessage}\n\n`
+  }
 
   // Check for pending effects
   if (isPlayerTurn && game.pendingEffect) {
@@ -211,28 +239,50 @@ export function handleCardPlay(bot: Bot) {
 
     await ctx.answerCallbackQuery(`🎉 Played ${formatCard(cardToPlay)}!`)
 
-    // Update all players' hands to reflect turn change
+    // Prepare and store action message BEFORE updating hands
+    const gameAfterPlay = getGame(groupChatId)
+    if (gameAfterPlay) {
+      if (result.gameEnded) {
+        gameAfterPlay.lastActionMessage = `🏆 **${userName} WINS!** 🏆`
+      } else {
+        // Get target player for special effects
+        const nextPlayerIndex = (gameAfterPlay.players.findIndex(p => p.id === userId) + 1) % gameAfterPlay.players.length
+        const targetPlayer = gameAfterPlay.players[nextPlayerIndex]
+
+        // Create and store the action message for private chats
+        const actionMessage = getSpecialCardMessage(cardToPlay, userName, targetPlayer.firstName, gameAfterPlay.pendingEffect)
+        gameAfterPlay.lastActionMessage = actionMessage
+      }
+    }
+
+    // Update all players' hands to reflect turn change (now with correct action message)
     await updateAllPlayerHands(bot, groupChatId)
 
     // Announce play in group chat
     try {
-      const game = getGame(groupChatId)
+      const gameForGroup = getGame(groupChatId)
       const newTopCard = getTopCard(groupChatId)
       const currentPlayer = getCurrentPlayer(groupChatId)
 
       let announceMessage = ''
 
-      if (game && game.state === 'ended') {
-        announceMessage = `� **${userName} WINS!** 🏆\n\nGame over! 🎉`
+      if (result.gameEnded) {
+        announceMessage = `🏆 **${userName} WINS!** 🏆\n\nGame over! 🎉`
       } else {
-        // Get target player for special effects
-        const nextPlayerIndex = (game!.players.findIndex(p => p.id === userId) + 1) % game!.players.length
-        const targetPlayer = game!.players[nextPlayerIndex]
+        // Use the already stored action message
+        announceMessage = gameForGroup!.lastActionMessage + `\n\n🃏 Top card: ${formatCard(newTopCard!)}`
 
-        // Use special card message
-        announceMessage = getSpecialCardMessage(cardToPlay, userName, targetPlayer.firstName, game!.pendingEffect)
-
-        announceMessage += `\n\n🃏 Top card: ${formatCard(newTopCard!)}`
+        // Show chosen symbol if active
+        if (gameForGroup!.chosenSymbol) {
+          const symbolEmojis: Record<string, string> = {
+            circle: '⚪',
+            triangle: '🔺',
+            cross: '✖️',
+            square: '🟦',
+            star: '⭐'
+          }
+          announceMessage += `\n🎯 Active symbol: ${symbolEmojis[gameForGroup!.chosenSymbol]} ${gameForGroup!.chosenSymbol}`
+        }
 
         if (!result.requiresSymbolChoice) {
           announceMessage += `\n🎯 Current turn: **${currentPlayer?.firstName}**`
@@ -277,12 +327,33 @@ export function handleDrawCard(bot: Bot) {
     const gameState = getGame(groupChatId)
     const wasPenalty = result.message.includes('due to pending effect')
 
+    // Store draw action messages BEFORE updating hands
     if (wasPenalty) {
       // Extract number of cards from message
       const cardCount = result.message.match(/(\d+)/)?.[1] || '?'
       await ctx.answerCallbackQuery(`📥 Drew ${cardCount} cards (penalty)`)
 
-      // Announce penalty in group
+      // Store penalty action for private chats
+      const gameState = getGame(groupChatId)
+      if (gameState) {
+        gameState.lastActionMessage = `📥 **${userName}** drew ${cardCount} cards due to special effect`
+      }
+    } else {
+      await ctx.answerCallbackQuery('🎴 Drew a card!')
+
+      // Store normal draw action for private chats
+      const gameState = getGame(groupChatId)
+      if (gameState) {
+        gameState.lastActionMessage = `🎴 **${userName}** drew a card`
+      }
+    }
+
+    // Update all players' hands to reflect turn change (now with correct action message)
+    await updateAllPlayerHands(bot, groupChatId)
+
+    // Announce penalty in group (if applicable)
+    if (wasPenalty) {
+      const cardCount = result.message.match(/(\d+)/)?.[1] || '?'
       try {
         const currentPlayer = getCurrentPlayer(groupChatId)
         const topCard = getTopCard(groupChatId)
@@ -293,12 +364,7 @@ export function handleDrawCard(bot: Bot) {
       } catch (error) {
         logger.error('Failed to announce penalty draw', { groupChatId, userId, error })
       }
-    } else {
-      await ctx.answerCallbackQuery('🎴 Drew a card!')
     }
-
-    // Update all players' hands to reflect turn change
-    await updateAllPlayerHands(bot, groupChatId)
 
     // Announce draw in group chat
     try {
@@ -365,7 +431,22 @@ export function handleSymbolSelection(bot: Bot) {
 
     await ctx.answerCallbackQuery(`🎯 Symbol ${selectedSymbol} selected!`)
 
-    // Update all players' hands to reflect turn change
+    // Store symbol selection action BEFORE updating hands
+    const symbolEmojis: Record<string, string> = {
+      circle: '⚪',
+      triangle: '🔺',
+      cross: '✖️',
+      square: '🟦',
+      star: '⭐'
+    }
+    const actionMessage = `🃏 **${userName}** played Whot and chose **${symbolEmojis[selectedSymbol]} ${selectedSymbol}**`
+
+    const gameState = getGame(groupChatId)
+    if (gameState) {
+      gameState.lastActionMessage = actionMessage
+    }
+
+    // Update all players' hands to reflect turn change (now with correct action message)
     await updateAllPlayerHands(bot, groupChatId)
 
     // Announce symbol selection in group chat
@@ -373,17 +454,8 @@ export function handleSymbolSelection(bot: Bot) {
       const currentPlayer = getCurrentPlayer(groupChatId)
       const newTopCard = getTopCard(groupChatId)
 
-      const symbolEmojis: Record<string, string> = {
-        circle: '⚪',
-        triangle: '🔺',
-        cross: '✖️',
-        square: '🟦',
-        star: '⭐'
-      }
-
-      const announceMessage = `🃏 **${userName}** played Whot and chose **${symbolEmojis[selectedSymbol]} ${selectedSymbol}**\n\n` +
-        `🃏 Top card: ${formatCard(newTopCard!)}\n` +
-        `🎯 Current turn: **${currentPlayer?.firstName}**`
+      // Use the already created action message
+      const announceMessage = actionMessage + `\n\n🃏 Top card: ${formatCard(newTopCard!)}\n🎯 Current turn: **${currentPlayer?.firstName}**`
 
       await bot.api.sendMessage(groupChatId, announceMessage, { parse_mode: 'Markdown' })
     } catch (error) {
