@@ -100,7 +100,7 @@ export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: numb
     row.forEach((card, index) => {
       const canPlay = isPlayerTurn && validCards.some(vc => vc.id === card.id)
       const emoji = getCardEmoji(card)
-      const buttonText = canPlay ? `${emoji} ${card.number}` : `${emoji}🔒${card.number}`
+      const buttonText = canPlay ? `${emoji} ${card.number}` : `🔒   ${emoji} ${card.number}`
 
       if (index === 0) {
         keyboard.text(buttonText, `play_${groupChatId}_${card.id}`)
