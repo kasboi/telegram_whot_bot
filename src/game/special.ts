@@ -51,15 +51,31 @@ export function canStackCard(newCard: Card, topCard: Card): boolean {
 }
 
 // Check if a card can be played during a pending effect
-export function canPlayDuringEffect(card: Card, pendingEffect: { type: 'pick_cards' | 'skip_turn' | 'general_market'; amount: number }): boolean {
+export function canPlayDuringEffect(card: Card, pendingEffect: { type: 'pick_cards' | 'skip_turn' | 'general_market'; amount: number; cardType?: number }): boolean {
   if (pendingEffect.type === 'pick_cards') {
+    // Only matching pick cards can counter pick effects
+    // Whot CANNOT be used as a counter - it's a wild card, not a defense card
     const effect = getCardEffect(card)
-    // Can stack Pick Two or Pick Three cards, or play Whot
-    return effect.type === 'pick_cards' || card.number === 20
+    if (effect.type === 'pick_cards') {
+      // If we know what type of card started the effect, only that exact type can counter
+      if (pendingEffect.cardType) {
+        return card.number === pendingEffect.cardType
+      }
+
+      // Fallback: determine by amount (for backward compatibility)
+      if (pendingEffect.amount % 2 === 0) {
+        // Even amounts suggest Pick Two (2) effects
+        return card.number === 2
+      } else {
+        // Odd amounts suggest Pick Three (5) effects  
+        return card.number === 5
+      }
+    }
+    return false
   }
 
-  // For other pending effects, only Whot can be played
-  return card.number === 20
+  // For other pending effects, no cards can be played - must resolve the effect first
+  return false
 }
 
 // Get card effect description for display

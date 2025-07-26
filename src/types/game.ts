@@ -50,6 +50,7 @@ export interface GameSession {
     amount: number
     targetPlayerIndex?: number // Player index who must pick cards
     stackCount?: number   // For stacking Pick Two/Three cards
+    cardType?: number     // Card number that initiated the effect (2 for Pick Two, 5 for Pick Three)
   }
   chosenSymbol?: string // For Whot card symbol selection
   winner?: Player      // Game winner

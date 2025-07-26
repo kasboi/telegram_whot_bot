@@ -210,6 +210,7 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
   game.playedCards.push(cardToPlay)
 
   // Update discard pile to reflect the new top card
+  if (!game.discardPile) game.discardPile = []
   game.discardPile.push(cardToPlay)
 
   // Handle special card effects
@@ -220,6 +221,14 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
     if (effect.type === 'pick_cards') {
       // If there's already a pending pick effect and this card stacks, add to it
       if (game.pendingEffect && game.pendingEffect.type === 'pick_cards') {
+        // Validate that only the same type of card can stack
+        if (game.pendingEffect.cardType && game.pendingEffect.cardType !== cardToPlay.number) {
+          return {
+            success: false,
+            message: `You can only counter with ${game.pendingEffect.cardType === 2 ? 'Pick Two' : 'Pick Three'} cards or Whot cards`
+          }
+        }
+
         const previousAmount = game.pendingEffect.amount
         game.pendingEffect.amount += effect.pickAmount!
         // CRITICAL FIX: Update targetPlayerIndex when stacking
@@ -229,9 +238,15 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
         game.pendingEffect = {
           type: 'pick_cards',
           amount: effect.pickAmount!,
-          targetPlayerIndex: (game.currentPlayerIndex + 1) % game.players.length
+          targetPlayerIndex: (game.currentPlayerIndex + 1) % game.players.length,
+          cardType: cardToPlay.number // Track what type of card initiated this effect
         }
-        effectDescription = `Applied pick effect: ${effect.pickAmount} cards to ${game.players[game.pendingEffect.targetPlayerIndex].firstName}`
+        const targetPlayerName = game.pendingEffect &&
+          typeof game.pendingEffect.targetPlayerIndex === 'number' &&
+          game.pendingEffect.targetPlayerIndex < game.players.length
+          ? game.players[game.pendingEffect.targetPlayerIndex].firstName
+          : 'next player'
+        effectDescription = `Applied pick effect: ${effect.pickAmount} cards to ${targetPlayerName}`
       }
     } else if (effect.type === 'extra_turn') {
       effectDescription = 'Hold On - Player gets extra turn'

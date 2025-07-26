@@ -1,6 +1,7 @@
 import { Bot, InlineKeyboard } from 'https://deno.land/x/grammy@v1.37.0/mod.ts'
 import { getGame, getCurrentPlayer, getTopCard, playCard, drawCard, selectWhotSymbol } from '../game/state.ts'
 import { getValidCards, formatCard, getCardEmoji } from '../game/cards.ts'
+import { type Card } from '../types/game.ts'
 import { logger } from '../utils/logger.ts'
 
 // Send initial hand to player when game starts
@@ -42,9 +43,15 @@ export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: numb
       messageText += `📥 You must play a Pick card or draw ${cardCount} cards\n\n`
 
       // Show only cards that can counter the effect
-      const counterCards = validCards.filter(card =>
-        card.number === 2 || card.number === 5 || card.number === 20
-      )
+      const counterCards = validCards.filter(card => {
+        // Whot CANNOT counter pick effects - only exact pick card types can counter
+        if (game.pendingEffect?.cardType) {
+          // Only the same type of pick card can counter
+          return card.number === game.pendingEffect.cardType
+        }
+        // Fallback for legacy effects without cardType
+        return card.number === 2 || card.number === 5
+      })
 
       if (counterCards.length > 0) {
         messageText += `💚 You can counter with ${counterCards.length} card(s) or accept penalty\n\n`
@@ -71,11 +78,19 @@ export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: numb
   // Determine which cards to show
   let cardsToShow = player.hand
   if (isPlayerTurn && game.pendingEffect && game.pendingEffect.type === 'pick_cards') {
-    // During pick effects, only show cards that can counter (Pick Two/Three or Whot)
-    const counterCards = player.hand.filter(card =>
-      card.number === 2 || card.number === 5 || card.number === 20
-    )
-    cardsToShow = counterCards.length > 0 ? counterCards : player.hand
+    // During pick effects, only show cards that can counter
+    const counterCards = player.hand.filter(card => {
+      // Whot CANNOT counter pick effects - only exact pick card types can counter
+      if (game.pendingEffect?.cardType) {
+        // Only the same type of pick card can counter
+        return card.number === game.pendingEffect.cardType
+      }
+      // Fallback for legacy effects without cardType
+      return card.number === 2 || card.number === 5
+    })
+
+    // If no counter cards available, show empty array (only draw button will appear)
+    cardsToShow = counterCards.length > 0 ? counterCards : []
   }
 
   // Add cards in rows of 3
@@ -386,15 +401,15 @@ function getSpecialCardMessage(cardToPlay: Card, playerName: string, targetPlaye
   } else if (cardToPlay.number === 2) {
     const totalCards = pendingEffect ? pendingEffect.amount : 2
     const stackMessage = pendingEffect && pendingEffect.amount > 2 ? ` (stacked to ${totalCards} cards!)` : ''
-    return `📥 **${playerName}** played Pick Two ${cardEmoji} ${cardToPlay.number}${stackMessage} - **${targetPlayerName}** must counter or draw ${totalCards} cards`
+    return `📥 **${playerName}** played Pick Two ${cardEmoji} ${cardToPlay.number}${stackMessage} \n **${targetPlayerName}** must counter or draw ${totalCards} cards`
   } else if (cardToPlay.number === 5) {
     const totalCards = pendingEffect ? pendingEffect.amount : 3
     const stackMessage = pendingEffect && pendingEffect.amount > 3 ? ` (stacked to ${totalCards} cards!)` : ''
-    return `📥 **${playerName}** played Pick Three ${cardEmoji} ${cardToPlay.number}${stackMessage} - **${targetPlayerName}** must counter or draw ${totalCards} cards`
+    return `📥 **${playerName}** played Pick Three ${cardEmoji} ${cardToPlay.number}${stackMessage} \n **${targetPlayerName}** must counter or draw ${totalCards} cards`
   } else if (cardToPlay.number === 8) {
-    return `⏭️ **${playerName}** played Suspension ${cardEmoji} ${cardToPlay.number} - **${targetPlayerName}** is skipped!`
+    return `⏭️ **${playerName}** played Suspension ${cardEmoji} ${cardToPlay.number} \n **${targetPlayerName}** is skipped!`
   } else if (cardToPlay.number === 14) {
-    return `🏪 **${playerName}** played General Market ${cardEmoji} ${cardToPlay.number} - all other players draw 1 card`
+    return `🏪 **${playerName}** played General Market ${cardEmoji} ${cardToPlay.number} \n All other players draw 1 card`
   } else if (cardToPlay.number === 20) {
     return `🃏 **${playerName}** played Whot ${cardEmoji} ${cardToPlay.number} - choose new symbol`
   }
