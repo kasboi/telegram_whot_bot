@@ -209,6 +209,11 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
   if (!game.playedCards) game.playedCards = []
   game.playedCards.push(cardToPlay)
 
+  // Clear chosen symbol when a non-Whot card is played
+  if (cardToPlay.symbol !== 'whot' && game.chosenSymbol) {
+    game.chosenSymbol = undefined
+  }
+
   // Update discard pile to reflect the new top card
   if (!game.discardPile) game.discardPile = []
   game.discardPile.push(cardToPlay)
