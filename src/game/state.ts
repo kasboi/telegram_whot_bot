@@ -222,7 +222,9 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
       if (game.pendingEffect && game.pendingEffect.type === 'pick_cards') {
         const previousAmount = game.pendingEffect.amount
         game.pendingEffect.amount += effect.pickAmount!
-        effectDescription = `Stacked pick effect: ${previousAmount} + ${effect.pickAmount} = ${game.pendingEffect.amount} cards`
+        // CRITICAL FIX: Update targetPlayerIndex when stacking
+        game.pendingEffect.targetPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
+        effectDescription = `Stacked pick effect: ${previousAmount} + ${effect.pickAmount} = ${game.pendingEffect.amount} cards to ${game.players[game.pendingEffect.targetPlayerIndex].firstName}`
       } else {
         game.pendingEffect = {
           type: 'pick_cards',
