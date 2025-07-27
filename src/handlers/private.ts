@@ -231,6 +231,12 @@ export function handleCardPlay(bot: Bot) {
 
     await ctx.answerCallbackQuery(`🎉 Played ${formatCard(cardToPlay)}!`)
 
+    // Check if deck was reshuffled during card play (e.g., General Market)
+    if (result.reshuffled) {
+      const reshuffleMessage = `⚠️ **The deck ran out!** ⚠️\n\nThe discard pile has been shuffled to create a new deck.\n\nIf the deck runs out again, it's a **SUDDEN-DEATH SHOWDOWN!**`
+      await bot.api.sendMessage(groupChatId, reshuffleMessage, { parse_mode: 'Markdown' })
+    }
+
     // Prepare and store action message BEFORE updating hands
     const gameAfterPlay = getGame(groupChatId)
     if (gameAfterPlay) {

@@ -133,40 +133,40 @@ export function getGameStats(): { totalGames: number; gameStates: Record<string,
  * Ensures the deck has enough cards, handling reshuffle and sudden death modes
  * Returns: {hasEnoughCards: boolean, reshuffledNow: boolean}
  */
-function ensureDeckHasCards(game: GameSession, cardsNeeded: number): {hasEnoughCards: boolean, reshuffledNow: boolean} {
+function ensureDeckHasCards(game: GameSession, cardsNeeded: number): { hasEnoughCards: boolean, reshuffledNow: boolean } {
   if (game.deck!.length >= cardsNeeded) {
-    return {hasEnoughCards: true, reshuffledNow: false}
+    return { hasEnoughCards: true, reshuffledNow: false }
   }
-  
-  logger.info('Deck exhaustion detected', { 
-    groupChatId: game.id, 
-    cardsInDeck: game.deck!.length, 
+
+  logger.info('Deck exhaustion detected', {
+    groupChatId: game.id,
+    cardsInDeck: game.deck!.length,
     cardsNeeded,
-    reshuffleCount: game.reshuffleCount 
+    reshuffleCount: game.reshuffleCount
   })
-  
+
   // First exhaustion - attempt reshuffle
   if (game.reshuffleCount === 0) {
     reshuffleDeckFromDiscard(game)
     game.reshuffleCount = 1
-    logger.info('First deck reshuffle completed', { 
-      groupChatId: game.id, 
-      newDeckSize: game.deck!.length 
+    logger.info('First deck reshuffle completed', {
+      groupChatId: game.id,
+      newDeckSize: game.deck!.length
     })
-    return {hasEnoughCards: game.deck!.length >= cardsNeeded, reshuffledNow: true}
+    return { hasEnoughCards: game.deck!.length >= cardsNeeded, reshuffledNow: true }
   }
-  
+
   // Second exhaustion - enter sudden death mode
   if (game.reshuffleCount === 1 && game.deck!.length === 0) {
     game.suddenDeath = true
-    logger.info('Sudden Death mode activated - no more drawing allowed', { 
-      groupChatId: game.id 
+    logger.info('Sudden Death mode activated - no more drawing allowed', {
+      groupChatId: game.id
     })
-    return {hasEnoughCards: false, reshuffledNow: false}
+    return { hasEnoughCards: false, reshuffledNow: false }
   }
-  
+
   // Still have some cards after first reshuffle
-  return {hasEnoughCards: game.deck!.length >= cardsNeeded, reshuffledNow: false}
+  return { hasEnoughCards: game.deck!.length >= cardsNeeded, reshuffledNow: false }
 }
 
 /**
@@ -174,25 +174,25 @@ function ensureDeckHasCards(game: GameSession, cardsNeeded: number): {hasEnoughC
  */
 function reshuffleDeckFromDiscard(game: GameSession): void {
   if (!game.discardPile || game.discardPile.length <= 1) {
-    logger.warn('Cannot reshuffle - discard pile too small', { 
-      groupChatId: game.id, 
-      discardPileSize: game.discardPile?.length || 0 
+    logger.warn('Cannot reshuffle - discard pile too small', {
+      groupChatId: game.id,
+      discardPileSize: game.discardPile?.length || 0
     })
     return
   }
-  
+
   // Keep the top card, reshuffle the rest
   const topCard: Card = game.discardPile.pop()!
   const cardsToReshuffle = [...game.discardPile]
-  
+
   // Shuffle and add to deck
   game.deck = [...(game.deck || []), ...shuffleDeck(cardsToReshuffle)]
   game.discardPile = [topCard]
-  
-  logger.info('Deck reshuffled from discard pile', { 
-    groupChatId: game.id, 
+
+  logger.info('Deck reshuffled from discard pile', {
+    groupChatId: game.id,
     cardsReshuffled: cardsToReshuffle.length,
-    newDeckSize: game.deck.length 
+    newDeckSize: game.deck.length
   })
 }
 
@@ -200,27 +200,27 @@ function reshuffleDeckFromDiscard(game: GameSession): void {
  * Safely draws cards for a player, respecting deck exhaustion rules
  * Returns: {cardsDrawn: number, reshuffledNow: boolean}
  */
-function safeDrawCards(game: GameSession, playerIndex: number, count: number): {cardsDrawn: number, reshuffledNow: boolean} {
+function safeDrawCards(game: GameSession, playerIndex: number, count: number): { cardsDrawn: number, reshuffledNow: boolean } {
   if (game.suddenDeath) {
-    logger.info('Draw request denied - Sudden Death mode active', { 
-      groupChatId: game.id, 
-      playerIndex, 
-      requestedCards: count 
+    logger.info('Draw request denied - Sudden Death mode active', {
+      groupChatId: game.id,
+      playerIndex,
+      requestedCards: count
     })
-    return {cardsDrawn: 0, reshuffledNow: false} // No drawing allowed in sudden death
+    return { cardsDrawn: 0, reshuffledNow: false } // No drawing allowed in sudden death
   }
-  
+
   const deckCheck = ensureDeckHasCards(game, count)
   if (!deckCheck.hasEnoughCards) {
     // Can only draw what's available
     count = game.deck!.length
-    logger.info('Partial draw due to deck exhaustion', { 
-      groupChatId: game.id, 
-      playerIndex, 
-      cardsAvailable: count 
+    logger.info('Partial draw due to deck exhaustion', {
+      groupChatId: game.id,
+      playerIndex,
+      cardsAvailable: count
     })
   }
-  
+
   let drawn = 0
   for (let i = 0; i < count && game.deck!.length > 0; i++) {
     const card = game.deck!.pop()
@@ -229,15 +229,15 @@ function safeDrawCards(game: GameSession, playerIndex: number, count: number): {
       drawn++
     }
   }
-  
-  logger.info('Cards drawn safely', { 
-    groupChatId: game.id, 
-    playerIndex, 
-    cardsDrawn: drawn, 
-    remainingInDeck: game.deck!.length 
+
+  logger.info('Cards drawn safely', {
+    groupChatId: game.id,
+    playerIndex,
+    cardsDrawn: drawn,
+    remainingInDeck: game.deck!.length
   })
-  
-  return {cardsDrawn: drawn, reshuffledNow: deckCheck.reshuffledNow}
+
+  return { cardsDrawn: drawn, reshuffledNow: deckCheck.reshuffledNow }
 }
 
 // Stage 2: Start the actual game with cards
@@ -300,7 +300,14 @@ export function getTopCard(groupChatId: number) {
 }
 
 // Play a card from player's hand
-export function playCard(groupChatId: number, userId: number, cardIndex: number): { success: boolean; message: string; gameEnded?: boolean; winner?: Player; requiresSymbolChoice?: boolean } {
+export function playCard(groupChatId: number, userId: number, cardIndex: number): {
+  success: boolean
+  message: string
+  gameEnded?: boolean
+  winner?: Player
+  requiresSymbolChoice?: boolean
+  reshuffled?: boolean
+} {
   const game = gameState.get(groupChatId)
   if (!game || game.state !== 'in_progress') {
     return { success: false, message: "No active game found" }
@@ -360,6 +367,7 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
   // Handle special card effects
   const effect = getCardEffect(cardToPlay)
   let effectDescription = ''
+  let reshuffledDuringPlay = false // Track if reshuffle occurred during this card play
 
   if (effect) {
     if (effect.type === 'pick_cards') {
@@ -403,9 +411,11 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
       // All other players draw one card using safe drawing
       const playersWhoGotCards = []
       const playersNeedingCards = game.players.length - 1
-      
+      let marketReshuffled = false
+
       // Check if we can provide cards to all players
-      if (!ensureDeckHasCards(game, playersNeedingCards)) {
+      const deckCheck = ensureDeckHasCards(game, playersNeedingCards)
+      if (!deckCheck.hasEnoughCards) {
         if (game.suddenDeath) {
           // Sudden death mode triggered - end game
           const scores = game.players.map((p) => ({
@@ -417,10 +427,13 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
           game.winner = scores[0].player
           game.state = 'ended'
           logger.info('Game ended by General Market sudden death', { groupChatId, winner: game.winner.firstName })
-          return { success: true, message: '💀 Sudden Death! Game ended during General Market', gameEnded: true, winner: game.winner }
+          return { success: true, message: '💀 Sudden Death! Game ended during General Market', gameEnded: true, winner: game.winner, reshuffled: false }
         }
       }
-      
+
+      // Track if reshuffle happened during this General Market
+      marketReshuffled = deckCheck.reshuffledNow
+
       // Safe drawing for each player
       for (let i = 0; i < game.players.length; i++) {
         if (i !== game.currentPlayerIndex) {
@@ -428,9 +441,19 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
           if (drawResult.cardsDrawn > 0) {
             playersWhoGotCards.push(game.players[i].firstName)
           }
+          // Track any additional reshuffles during individual draws
+          if (drawResult.reshuffledNow) {
+            marketReshuffled = true
+          }
         }
       }
       effectDescription = `General Market - ${playersWhoGotCards.join(', ')} drew cards`
+
+      // Store reshuffle info for return
+      if (marketReshuffled) {
+        reshuffledDuringPlay = true
+        logger.info('General Market triggered deck reshuffle', { groupChatId, playersWhoGotCards })
+      }
     } else if (effect.type === 'choose_symbol') {
       effectDescription = 'Whot - Requires symbol selection'
 
@@ -443,7 +466,7 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
         requiresSymbolChoice: true
       })
 
-      return { success: true, message: `Played ${cardToPlay.symbol} ${cardToPlay.number}`, requiresSymbolChoice: true }
+      return { success: true, message: `Played ${cardToPlay.symbol} ${cardToPlay.number}`, requiresSymbolChoice: true, reshuffled: reshuffledDuringPlay }
     }
   }
 
@@ -457,7 +480,7 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
       finalPlayerCounts: game.players.map(p => ({ name: p.firstName, cards: p.hand?.length || 0 })),
       totalTurns: game.playedCards?.length || 0
     })
-    return { success: true, message: `${player.firstName} wins!`, gameEnded: true, winner: player }
+    return { success: true, message: `${player.firstName} wins!`, gameEnded: true, winner: player, reshuffled: reshuffledDuringPlay }
   }
 
   // Advance turn only if it's not a Hold On card
@@ -486,7 +509,7 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
   })
 
   const cardDescription = cardToPlay.number === 20 ? 'Whot' : `${cardToPlay.symbol} ${cardToPlay.number}`
-  return { success: true, message: `Played ${cardDescription}` }
+  return { success: true, message: `Played ${cardDescription}`, reshuffled: reshuffledDuringPlay }
 }
 
 // Draw a card from the deck
@@ -516,10 +539,12 @@ export function drawCard(groupChatId: number, userId: number): {
   // Handle pending effects first (Pick Two/Three cards)
   if (game.pendingEffect && game.pendingEffect.type === 'pick_cards') {
     const cardsToDraw = game.pendingEffect.amount
-    const drawResult = safeDrawCards(game, playerIndex, cardsToDraw)
-    
-    // Check if game ended due to sudden death
-    if (game.suddenDeath && drawResult.cardsDrawn === 0) {
+
+    // For penalty effects, ensure we have enough cards by forcing reshuffle if needed
+    const deckCheck = ensureDeckHasCards(game, cardsToDraw)
+
+    if (!deckCheck.hasEnoughCards && game.suddenDeath) {
+      // Game ends in sudden death if we can't fulfill penalty draw
       const scores = game.players.map((p) => ({
         name: p.firstName,
         score: calculateHandValue(p.hand || []),
@@ -536,23 +561,34 @@ export function drawCard(groupChatId: number, userId: number): {
         tenderResult: { winner: game.winner, scores: scores.map(s => ({ name: s.name, score: s.score })) }
       }
     }
-    
+
+    // Now draw the cards (should get full amount after reshuffle)
+    const drawResult = safeDrawCards(game, playerIndex, cardsToDraw)
+
+    // Check if we still didn't get enough cards (shouldn't happen after reshuffle)
+    if (drawResult.cardsDrawn < cardsToDraw && !game.suddenDeath) {
+      logger.warn('Penalty draw incomplete despite reshuffle attempt', {
+        groupChatId,
+        requested: cardsToDraw,
+        drawn: drawResult.cardsDrawn,
+        deckSize: game.deck!.length
+      })
+    }
+
     game.pendingEffect = undefined
     game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
-    
+
     logger.info('Penalty cards drawn', { groupChatId, player: player.firstName, cardsDrawn: drawResult.cardsDrawn, newHandSize: player.hand!.length })
-    
+
     return {
       success: true,
       message: drawResult.cardsDrawn > 0 ? `Drew ${drawResult.cardsDrawn} cards due to penalty effect` : 'No cards available to draw',
       cardDrawn: drawResult.cardsDrawn > 0 ? player.hand![player.hand!.length - 1] : undefined,
-      reshuffled: drawResult.reshuffledNow,
+      reshuffled: drawResult.reshuffledNow || deckCheck.reshuffledNow,
     }
-  }
-
-  // Normal card draw
+  }  // Normal card draw
   const drawResult = safeDrawCards(game, playerIndex, 1)
-  
+
   // Check if game ended due to sudden death
   if (game.suddenDeath && drawResult.cardsDrawn === 0) {
     const scores = game.players.map((p) => ({
@@ -571,14 +607,14 @@ export function drawCard(groupChatId: number, userId: number): {
       tenderResult: { winner: game.winner, scores: scores.map(s => ({ name: s.name, score: s.score })) }
     }
   }
-  
+
   game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
-  
+
   logger.info('Card drawn', { groupChatId, player: player.firstName, newHandSize: player.hand!.length })
-  
-  return { 
-    success: true, 
-    message: drawResult.cardsDrawn > 0 ? 'Drew a card' : 'No cards available to draw', 
+
+  return {
+    success: true,
+    message: drawResult.cardsDrawn > 0 ? 'Drew a card' : 'No cards available to draw',
     cardDrawn: drawResult.cardsDrawn > 0 ? player.hand![player.hand!.length - 1] : undefined,
     reshuffled: drawResult.reshuffledNow
   }
