@@ -4,6 +4,7 @@ import { getValidCards, formatCard, getCardEmoji } from '../game/cards.ts'
 import { type Card } from '../types/game.ts'
 import { logger } from '../utils/logger.ts'
 import { generateGroupStatusMessage } from './updates.ts'
+import { sendGameStats } from './stats.ts'
 
 
 // Send initial hand to player when game starts
@@ -253,8 +254,13 @@ export function handleCardPlay(bot: Bot) {
     try {
       const gameForGroup = getGame(groupChatId)
       if (gameForGroup) {
-        const announceMessage = generateGroupStatusMessage(gameForGroup)
-        await bot.api.sendMessage(groupChatId, announceMessage, { parse_mode: 'Markdown' })
+        if (result.gameEnded) {
+          await bot.api.sendMessage(groupChatId, `🏆 **${userName} WINS!** 🏆\n\nGame over! 🎉`, { parse_mode: 'Markdown' })
+          await sendGameStats(bot, gameForGroup)
+        } else {
+          const announceMessage = generateGroupStatusMessage(gameForGroup)
+          await bot.api.sendMessage(groupChatId, announceMessage, { parse_mode: 'Markdown' })
+        }
       }
     } catch (error) {
       logger.error('Announcement failed', { groupChatId, userId, error: error instanceof Error ? error.message : String(error) })
@@ -304,6 +310,7 @@ export function handleDrawCard(bot: Bot) {
 
       await bot.api.sendMessage(groupChatId, tenderMessage, { parse_mode: 'Markdown' })
       await ctx.answerCallbackQuery('The game has ended!')
+      await sendGameStats(bot, game)
       return
     }
 

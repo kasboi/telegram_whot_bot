@@ -66,7 +66,9 @@ export function addPlayer(groupChatId: number, userId: number, firstName: string
   const newPlayer: Player = {
     id: userId,
     firstName,
-    state: 'joined'
+    state: 'joined',
+    cardsPlayedCount: 0,
+    specialCardsPlayedCount: 0,
   }
 
   game.players.push(newPlayer)
@@ -224,6 +226,12 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
   if (!game.playedCards) game.playedCards = []
   game.playedCards.push(cardToPlay)
 
+  // Increment player stats
+  player.cardsPlayedCount = (player.cardsPlayedCount || 0) + 1
+  if (cardToPlay.isSpecial) {
+    player.specialCardsPlayedCount = (player.specialCardsPlayedCount || 0) + 1
+  }
+
   // Clear chosen symbol when a non-Whot card is played
   if (cardToPlay.symbol !== 'whot' && game.chosenSymbol) {
     game.chosenSymbol = undefined
@@ -369,117 +377,81 @@ export function drawCard(groupChatId: number, userId: number): {
     return { success: false, message: "It's not your turn" }
   }
 
-  // --- DECK EXHAUSTION LOGIC ---
-  if (game.deck!.length === 0) {
+  // --- DECK EXHAUSTION & DRAW LOGIC ---
+  let reshuffled = false
+  const handleDeckExhaustion = () => {
+    if (game.deck!.length > 0) return false // Deck not empty
+
     if (game.reshuffleCount === 0) {
-      // First time deck is empty: Reshuffle
       game.reshuffleCount = 1
       const topCard = game.discardPile!.pop()!
       const cardsToReshuffle = game.discardPile!
       game.deck = shuffleDeck(cardsToReshuffle)
       game.discardPile = [topCard]
-
+      reshuffled = true
       logger.info('Deck reshuffled', { groupChatId, newDeckSize: game.deck.length })
-
-      // After reshuffling, proceed to draw a card for the pending effect or the player
+      return false // Reshuffled, continue drawing
     } else {
-      // Second time deck is empty: Sudden-Death Showdown
+      // Sudden-Death Showdown
       game.state = 'ended'
       const scores = game.players.map((p) => ({
         name: p.firstName,
         score: calculateHandValue(p.hand || []),
         player: p,
       }))
-
-      scores.sort((a, b) => a.score - b.score) // Sort by lowest score
-
-      const winner = scores[0].player
-      game.winner = winner
-
-      logger.info('Game ended by Forced Tender', {
-        groupChatId,
-        winner: winner.firstName,
-        scores,
-      })
-
-      return {
-        success: true,
-        message: 'Sudden-Death Showdown! The player with the lowest score wins.',
-        gameEnded: true,
-        tenderResult: { winner, scores: scores.map(s => ({ name: s.name, score: s.score })) },
-      }
+      scores.sort((a, b) => a.score - b.score)
+      game.winner = scores[0].player
+      logger.info('Game ended by Forced Tender', { groupChatId, winner: game.winner.firstName, scores })
+      return true // Game ended
     }
   }
 
   // Handle pending effects first
   if (game.pendingEffect && game.pendingEffect.type === 'pick_cards') {
-    // Player must draw the required amount of cards
     const cardsToDraw = game.pendingEffect.amount
     const drawnCards: Card[] = []
 
     for (let i = 0; i < cardsToDraw; i++) {
-      if (game.deck!.length === 0) {
-        // This is an edge case within an edge case. If the deck runs out *while* drawing penalty cards,
-        // we should probably trigger the reshuffle/tender logic right away.
-        // For now, we'll just stop drawing. The next draw attempt will trigger the main logic.
-        logger.warn('Deck exhausted during penalty draw', { groupChatId })
-        break
+      if (handleDeckExhaustion()) {
+        // Game ended mid-draw
+        return {
+          success: true,
+          message: 'Sudden-Death Showdown! The player with the lowest score wins.',
+          gameEnded: true,
+          tenderResult: { winner: game.winner!, scores: game.players.map(p => ({ name: p.firstName, score: calculateHandValue(p.hand!) })) },
+        }
       }
       const card = game.deck!.pop()!
       player.hand!.push(card)
       drawnCards.push(card)
     }
 
-    // Clear the pending effect and advance turn
     game.pendingEffect = undefined
-    const nextPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
-    game.currentPlayerIndex = nextPlayerIndex
-    const nextPlayer = game.players[nextPlayerIndex]
-
-    logger.info('Penalty cards drawn', {
-      groupChatId,
-      player: player.firstName,
-      cardsDrawn: drawnCards.length,
-      newHandSize: player.hand!.length,
-      nextPlayer: nextPlayer.firstName,
-      reason: 'pending_effect',
-    })
-
+    game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
+    logger.info('Penalty cards drawn', { groupChatId, player: player.firstName, cardsDrawn: drawnCards.length, newHandSize: player.hand!.length })
     return {
       success: true,
       message: `Drew ${drawnCards.length} cards due to pending effect`,
-      cardDrawn: drawnCards[0], // Return first card for display
+      cardDrawn: drawnCards[0],
+      reshuffled,
     }
   }
 
-  // Normal card draw (player choice)
-  const drawnCard = game.deck!.pop()!
-  player.hand!.push(drawnCard)
-
-  // Log warning if deck is getting low
-  if (game.deck!.length <= 5) {
-    logger.warn('Deck running low', {
-      groupChatId,
-      cardsRemaining: game.deck!.length,
-      totalPlayersCards: game.players.reduce((sum, p) => sum + (p.hand?.length || 0), 0),
-    })
+  // Normal card draw
+  if (handleDeckExhaustion()) {
+    return {
+      success: true,
+      message: 'Sudden-Death Showdown! The player with the lowest score wins.',
+      gameEnded: true,
+      tenderResult: { winner: game.winner!, scores: game.players.map(p => ({ name: p.firstName, score: calculateHandValue(p.hand!) })) },
+    }
   }
 
-  // Advance turn after drawing a card
-  const nextPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
-  game.currentPlayerIndex = nextPlayerIndex
-  const nextPlayer = game.players[nextPlayerIndex]
-
-  logger.info('Card drawn', {
-    groupChatId,
-    player: player.firstName,
-    cardDrawn: { symbol: drawnCard.symbol, number: drawnCard.number },
-    newHandSize: player.hand!.length,
-    nextPlayer: nextPlayer.firstName,
-    reason: 'voluntary',
-  })
-
-  return { success: true, message: 'Drew a card', cardDrawn: drawnCard }
+  const drawnCard = game.deck!.pop()!
+  player.hand!.push(drawnCard)
+  game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
+  logger.info('Card drawn', { groupChatId, player: player.firstName, newHandSize: player.hand!.length })
+  return { success: true, message: 'Drew a card', cardDrawn: drawnCard, reshuffled }
 }
 
 // Handle Whot symbol selection

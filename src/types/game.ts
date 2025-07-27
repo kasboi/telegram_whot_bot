@@ -27,6 +27,8 @@ export interface Player {
   username?: string // Telegram username
   state: PlayerState
   hand?: Card[]     // Player's cards (Stage 2+)
+  cardsPlayedCount?: number
+  specialCardsPlayedCount?: number
 }
 
 export interface GameSession {
