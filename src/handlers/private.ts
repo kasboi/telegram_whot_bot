@@ -41,7 +41,7 @@ export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: numb
     messageText += `${index + 1}. ${p.firstName}${isThisPlayer} ${turnIndicator} (${p.hand?.length || 0} cards)\n`
   })
 
-  messageText += `\n🃏 Top card: ${formatCard(topCard)}\n`
+  messageText += `\n🃏 Top card: ${formatCard(topCard)}\n\n`
 
   // Show chosen symbol if active
   if (game.chosenSymbol) {
@@ -54,8 +54,6 @@ export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: numb
     }
     messageText += `🎯 Active symbol: ${symbolEmojis[game.chosenSymbol]} ${game.chosenSymbol}\n`
   }
-
-  messageText += `👤 Your cards: ${player.hand.length}\n\n`
 
   // Show last game action (same as public announcements)
   if (game.lastActionMessage) {
@@ -95,10 +93,8 @@ export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: numb
       messageText += `❌ No valid plays - you can draw a card\n\n`
     }
   } else {
-    messageText += `⏳ Waiting for ${currentPlayer?.firstName}'s turn\n\n`
+    messageText += `⏳ Waiting for ${currentPlayer?.firstName}'s turn\n`
   }
-
-  messageText += `**Your cards:**`
 
   // Create keyboard with card buttons
   const keyboard = new InlineKeyboard()
