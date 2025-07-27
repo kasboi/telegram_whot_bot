@@ -1,5 +1,5 @@
 import { Bot } from 'https://deno.land/x/grammy@v1.37.0/mod.ts'
-import { handleStartGame, handleJoinGame, handleStartButton, handleMyCards } from './handlers/commands.ts'
+import { handleStartGame, handleCallbackQuery, handleMyCards } from './handlers/commands.ts'
 import { handleCardPlay, handleDrawCard, handleSymbolSelection } from './handlers/private.ts'
 import { logger } from './utils/logger.ts'
 
@@ -27,8 +27,7 @@ bot.on('callback_query', async (ctx, next) => {
 
 // Register command handlers
 handleStartGame(bot)
-handleJoinGame(bot)
-handleStartButton(bot)
+handleCallbackQuery(bot)
 handleMyCards(bot)
 
 // Register private chat handlers
@@ -61,7 +60,27 @@ bot.catch((err) => {
   logger.error('Bot error occurred', { error: err.message, stack: err.stack })
 })
 
+// Set up bot commands that appear in the "/" menu
+async function setupBotCommands() {
+  await bot.api.setMyCommands([
+    { command: 'start', description: 'Welcome message and bot info' },
+    { command: 'startgame', description: 'Start a new Whot game (group chats only)' },
+    { command: 'mycards', description: 'Get your cards in private message' },
+  ])
+  logger.info('Bot commands registered successfully')
+}
+
 // Start the bot
-logger.info('Starting Whot Game Bot...')
-logger.info('Bot is running and waiting for messages')
-bot.start()
+async function startBot() {
+  try {
+    await setupBotCommands()
+    logger.info('Starting Whot Game Bot...')
+    logger.info('Bot is running and waiting for messages')
+    bot.start()
+  } catch (error) {
+    logger.error('Failed to start bot', { error: error instanceof Error ? error.message : String(error) })
+    Deno.exit(1)
+  }
+}
+
+startBot()

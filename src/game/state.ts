@@ -288,6 +288,31 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
       let playersWhoGotCards = []
       for (let i = 0; i < game.players.length; i++) {
         if (i !== game.currentPlayerIndex) {
+          // Check deck exhaustion before drawing for each player
+          if (game.deck!.length === 0) {
+            if (game.reshuffleCount === 0) {
+              // First exhaustion - reshuffle discard pile
+              game.reshuffleCount = 1
+              const topCard: Card = game.discardPile!.pop()!
+              const cardsToReshuffle = game.discardPile!
+              game.deck = shuffleDeck(cardsToReshuffle)
+              game.discardPile = [topCard]
+              logger.info('Deck reshuffled during General Market', { groupChatId, newDeckSize: game.deck.length })
+            } else {
+              // Second exhaustion - trigger sudden death
+              game.state = 'ended'
+              const scores = game.players.map((p) => ({
+                name: p.firstName,
+                score: calculateHandValue(p.hand || []),
+                player: p,
+              }))
+              scores.sort((a, b) => a.score - b.score)
+              game.winner = scores[0].player
+              logger.info('Game ended by General Market sudden death', { groupChatId, winner: game.winner.firstName })
+              return { success: true, message: 'Sudden-Death Showdown during General Market!', gameEnded: true, winner: game.winner }
+            }
+          }
+
           const drawnCard = game.deck!.pop()
           if (drawnCard) {
             game.players[i].hand!.push(drawnCard)
@@ -497,4 +522,40 @@ export function selectWhotSymbol(groupChatId: number, userId: number, selectedSy
   }
 
   return { success: false, message: "No Whot card to select symbol for" }
+}
+
+export function removePlayer(groupChatId: number, userId: number): { success: boolean; gameCancelled: boolean } {
+  const game = gameState.get(groupChatId)
+  if (!game || (game.state !== 'waiting_for_players' && game.state !== 'ready_to_start')) {
+    return { success: false, gameCancelled: false }
+  }
+
+  const playerIndex = game.players.findIndex(p => p.id === userId)
+  if (playerIndex === -1) {
+    return { success: false, gameCancelled: false }
+  }
+
+  // If the creator leaves, cancel the entire game
+  if (game.creatorId === userId) {
+    gameState.delete(groupChatId)
+    logger.info('Game cancelled - creator left', { groupChatId, creatorId: userId })
+    return { success: true, gameCancelled: true }
+  }
+
+  // Remove the player
+  game.players.splice(playerIndex, 1)
+
+  // Update game state based on remaining players
+  if (game.players.length < 2) {
+    game.state = 'waiting_for_players'
+  }
+
+  logger.info('Player left game', {
+    groupChatId,
+    userId,
+    remainingPlayers: game.players.length,
+    newState: game.state
+  })
+
+  return { success: true, gameCancelled: false }
 }

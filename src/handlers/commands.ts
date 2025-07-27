@@ -1,249 +1,213 @@
 import { Bot, Context, InlineKeyboard } from "https://deno.land/x/grammy@v1.37.0/mod.ts"
-import { createGame, getGame, addPlayer, canStartGame, startGameWithCards, getCurrentPlayer, getTopCard } from '../game/state.ts'
+import { createGame, getGame, addPlayer, removePlayer, canStartGame, startGameWithCards } from '../game/state.ts'
 import { logger } from '../utils/logger.ts'
-import { formatCard } from '../game/cards.ts'
 import { sendPlayerHand } from './private.ts'
 import { generateGroupStatusMessage } from "./updates.ts"
 
-export function handleStartGame(bot: Bot) {
-  bot.command('startgame', async (ctx: Context) => {
-    // Only allow in group chats
-    if (ctx.chat?.type !== 'group' && ctx.chat?.type !== 'supergroup') {
-      await ctx.reply('❌ This command only works in group chats!')
-      return
-    }
-
-    const groupChatId = ctx.chat.id
-    const creatorId = ctx.from?.id
-    const creatorName = ctx.from?.first_name || 'Unknown'
-
-    if (!creatorId) {
-      await ctx.reply('❌ Could not identify user.')
-      return
-    }
-
-    // Check if game already exists
-    const existingGame = getGame(groupChatId)
-    if (existingGame && existingGame.state !== 'idle' && existingGame.state !== 'ended') {
-      await ctx.reply('🎮 A game is already in progress in this group!')
-      return
-    }
-
-    // Create new game
-    createGame(groupChatId, creatorId, creatorName)
-
-    // Automatically add the creator to the game
-    addPlayer(groupChatId, creatorId, creatorName)
-
-    // Create join button
-    const keyboard = new InlineKeyboard()
-      .text('🃏 Join Game', `join_${groupChatId}`)
-
-    await ctx.reply(
-      `🎴 **Whot Game Started!** 🎴\n\n` +
-      `🎯 Game created by ${creatorName}\n` +
-      `👥 Players: ${creatorName} (1)\n` +
-      `⏳ Need at least 1 more player to start\n\n` +
-      `Click the button below to join:`,
-      {
-        reply_markup: keyboard,
-        parse_mode: 'Markdown'
-      }
-    )
-  })
-}
-
-export function handleJoinGame(bot: Bot) {
-  // Debug: Log all callback queries to see what we're receiving
-  bot.on('callback_query:data', async (ctx, next) => {
-    logger.info('All callback query data received', {
-      data: ctx.callbackQuery.data,
-      userId: ctx.from.id,
-      userName: ctx.from.first_name
-    })
-    await next()
-  })
-
-  bot.callbackQuery(/^join_(-?\d+)$/, async (ctx) => {
-    const groupChatId = parseInt(ctx.match![1])
-    const userId = ctx.from.id
-    const userName = ctx.from.first_name || 'Unknown'
-
-    logger.info('Join game button clicked - MATCHED REGEX', { groupChatId, userId, userName })
-
-    const success = addPlayer(groupChatId, userId, userName)
-
-    if (!success) {
-      const game = getGame(groupChatId)
-      let errorMessage = '❌ Could not join game'
-
-      if (!game) {
-        errorMessage = '❌ Game not found'
-      } else if (game.players.some(p => p.id === userId)) {
-        errorMessage = '✅ You are already in this game!'
-      } else if (game.state === 'in_progress') {
-        errorMessage = '❌ Game has already started'
-      } else {
-        errorMessage = '❌ Cannot join game at this time'
-      }
-
-      await ctx.answerCallbackQuery({ text: errorMessage, show_alert: true })
-      logger.warn('Join game failed', { groupChatId, userId, reason: errorMessage })
-      return
-    }
-
+async function updateLobbyMessage(ctx: Context, groupChatId: number) {
     const game = getGame(groupChatId)
     if (!game) {
-      await ctx.answerCallbackQuery({ text: '❌ Game not found', show_alert: true })
-      logger.error('Game disappeared after successful join', { groupChatId, userId })
-      return
+        await ctx.editMessageText('🚫 **Game Cancelled**\n\nThe game lobby is now empty.')
+        return
     }
 
-    await ctx.answerCallbackQuery({ text: `✅ You joined the game!`, show_alert: false })
-
-    // Update the message with current players and start button if ready
     let messageText = `🎴 **Whot Game** 🎴\n\n` +
-      `🎯 Created by: Creator\n` +
-      `👥 Players (${game.players.length}):\n`
+        `🎯 Created by: ${game.players.find(p => p.id === game.creatorId)?.firstName || 'Creator'}\n` +
+        `👥 Players (${game.players.length}):\n`
 
     game.players.forEach((player, index) => {
-      messageText += `${index + 1}. ${player.firstName}\n`
+        messageText += `${index + 1}. ${player.firstName}\n`
     })
 
-    let keyboard = new InlineKeyboard()
-      .text('🃏 Join Game', `join_${groupChatId}`)
+    const keyboard = new InlineKeyboard()
+        .text('🃏 Join Game', `join_${groupChatId}`)
+        .text('🚪 Leave Game', `leave_${groupChatId}`)
 
-    // Add start button if game is ready
     if (game.state === 'ready_to_start') {
-      messageText += `\n✅ Ready to start! (Creator can tap "Start Game")`
-      keyboard = keyboard
-        .row()
-        .text('🚀 Start Game', `start_${groupChatId}`)
+        messageText += `\n✅ Ready to start! (Creator can tap "Start Game")`
+        keyboard.row().text('🚀 Start Game', `start_${groupChatId}`)
+    } else {
+        messageText += `\n⏳ Need at least ${2 - game.players.length} more player(s) to start.`
     }
 
     await ctx.editMessageText(messageText, {
-      reply_markup: keyboard,
-      parse_mode: 'Markdown'
+        reply_markup: keyboard,
+        parse_mode: 'Markdown'
     })
-
-    logger.info('Join game successful', {
-      groupChatId,
-      totalPlayers: game.players.length,
-      gameState: game.state
-    })
-  })
 }
 
-export function handleStartButton(bot: Bot) {
-  bot.callbackQuery(/^start_(-?\d+)$/, async (ctx) => {
-    const groupChatId = parseInt(ctx.match![1])
-    const userId = ctx.from.id
+export function handleStartGame(bot: Bot) {
+    bot.command('startgame', async (ctx: Context) => {
+        // Only allow in group chats
+        if (ctx.chat?.type !== 'group' && ctx.chat?.type !== 'supergroup') {
+            await ctx.reply('❌ This command only works in group chats!')
+            return
+        }
 
-    logger.info('Start game button clicked', { groupChatId, userId })
+        const groupChatId = ctx.chat.id
+        const creatorId = ctx.from?.id
+        const creatorName = ctx.from?.first_name || 'Unknown'
 
-    if (!canStartGame(groupChatId, userId)) {
-      await ctx.answerCallbackQuery({
-        text: '❌ Only the game creator can start the game when ready!',
-        show_alert: true
-      })
-      logger.warn('Non-creator attempted to start game', { groupChatId, userId })
-      return
-    }
+        if (!creatorId) {
+            await ctx.reply('❌ Could not identify user.')
+            return
+        }
 
-    const game = getGame(groupChatId)
-    if (!game) {
-      await ctx.answerCallbackQuery('❌ Game not found')
-      return
-    }
+        // Check if game already exists
+        const existingGame = getGame(groupChatId)
+        if (existingGame && existingGame.state !== 'idle' && existingGame.state !== 'ended') {
+            await ctx.reply('🎮 A game is already in progress in this group!')
+            return
+        }
 
-    // Start the game with card dealing
-    const success = startGameWithCards(groupChatId)
-    if (!success) {
-      await ctx.answerCallbackQuery('❌ Failed to start game')
-      return
-    }
+        // Create new game
+        createGame(groupChatId, creatorId, creatorName)
 
-    // Get updated game state
-    const currentPlayer = getCurrentPlayer(groupChatId)
-    const topCard = getTopCard(groupChatId)
+        // Automatically add the creator to the game
+        addPlayer(groupChatId, creatorId, creatorName)
 
-    await ctx.answerCallbackQuery('🎮 Game started!')
+        // Create join and leave buttons
+        const keyboard = new InlineKeyboard()
+            .text('🃏 Join Game', `join_${groupChatId}`)
+            .text('🚪 Leave Game', `leave_${groupChatId}`)
 
-    // Update message to show game has started
-    const messageText = generateGroupStatusMessage(game)
-    await ctx.editMessageText(messageText, {
-      parse_mode: 'Markdown'
+        await ctx.reply(
+            `🎴 **Whot Game Started!** 🎴\n\n` +
+            `🎯 Game created by ${creatorName}\n` +
+            `👥 Players: ${creatorName} (1)\n` +
+            `⏳ Need at least 1 more player to start\n\n` +
+            `Click a button below to join or leave:`,
+            {
+                reply_markup: keyboard,
+                parse_mode: 'Markdown'
+            }
+        )
     })
+}
 
-    // Send cards to each player in private chat
-    const failedDeliveries: string[] = []
-    for (const player of game.players) {
-      const success = await sendPlayerHand(bot, groupChatId, player.id, player.firstName)
-      if (!success) {
-        failedDeliveries.push(player.firstName)
-      }
-    }
+export function handleCallbackQuery(bot: Bot) {
+    bot.callbackQuery(/^(join|leave|start)_(-?\d+)$/, async (ctx) => {
+        const action = ctx.match![1]
+        const groupChatId = parseInt(ctx.match![2])
+        const userId = ctx.from.id
+        const userName = ctx.from.first_name || 'Unknown'
 
-    // If some players couldn't receive private messages, show instructions in group
-    if (failedDeliveries.length > 0) {
-      const failedNames = failedDeliveries.join(', ')
-      await ctx.api.sendMessage(groupChatId,
-        `⚠️ <b>Private Message Issue</b> ⚠️\n\n` +
-        `${failedNames}: I couldn't send your cards via private message!\n\n` +
-        `🔧 <b>How to fix:</b>\n` +
-        `1. Send /start to @${ctx.me.username} in private chat\n` +
-        `2. Then use /mycards here to get your cards\n\n` +
-        `💡 This only needs to be done once!`,
-        { parse_mode: 'HTML' }
-      )
-    }
+        logger.info('Game action button clicked', { action, groupChatId, userId, userName })
 
-    logger.info(`Game started in group ${groupChatId} with ${game.players.length} players`, {
-      topCard: topCard?.id,
-      currentPlayer: currentPlayer?.firstName
+        switch (action) {
+            case 'join': {
+                const success = addPlayer(groupChatId, userId, userName)
+
+                if (!success) {
+                    const game = getGame(groupChatId)
+                    let errorMessage = '❌ Could not join game'
+
+                    if (!game) {
+                        errorMessage = '❌ Game not found'
+                    } else if (game.players.some(p => p.id === userId)) {
+                        errorMessage = '✅ You are already in this game!'
+                    } else if (game.state === 'in_progress') {
+                        errorMessage = '❌ Game has already started'
+                    } else {
+                        errorMessage = '❌ Cannot join game at this time'
+                    }
+
+                    await ctx.answerCallbackQuery({ text: errorMessage, show_alert: true })
+                    return
+                }
+
+                await ctx.answerCallbackQuery({ text: `✅ You joined the game!` })
+                await updateLobbyMessage(ctx, groupChatId)
+                break
+            }
+
+            case 'leave': {
+                const result = removePlayer(groupChatId, userId)
+
+                if (!result.success) {
+                    await ctx.answerCallbackQuery({ text: '❌ You are not in the game or the game has started.', show_alert: true })
+                    return
+                }
+
+                await ctx.answerCallbackQuery({ text: '🚪 You left the game.' })
+
+                if (result.gameCancelled) {
+                    await ctx.editMessageText(`🚫 **Game Cancelled** 🚫\n\nThe creator, ${userName}, left the game.`)
+                } else {
+                    await updateLobbyMessage(ctx, groupChatId)
+                }
+                break
+            }
+
+            case 'start': {
+                if (!canStartGame(groupChatId, userId)) {
+                    await ctx.answerCallbackQuery({ text: '❌ Only the creator can start the game and you need at least 2 players.', show_alert: true })
+                    return
+                }
+
+                const success = startGameWithCards(groupChatId)
+                if (!success) {
+                    await ctx.answerCallbackQuery({ text: '❌ Failed to start game', show_alert: true })
+                    return
+                }
+
+                await ctx.answerCallbackQuery('🎮 Game started!')
+
+                const game = getGame(groupChatId)
+                if (game) {
+                    const messageText = generateGroupStatusMessage(game)
+                    await ctx.editMessageText(messageText, { parse_mode: 'Markdown' })
+
+                    // Send hands to all players
+                    for (const player of game.players) {
+                        await sendPlayerHand(bot, groupChatId, player.id, player.firstName)
+                    }
+                }
+                break
+            }
+        }
     })
-  })
 }
 
 // Handle /mycards command for players who couldn't receive private messages
 export function handleMyCards(bot: Bot) {
-  bot.command('mycards', async (ctx) => {
-    // Only allow in group chats where there's an active game
-    if (ctx.chat?.type !== 'group' && ctx.chat?.type !== 'supergroup') {
-      await ctx.reply('❌ This command only works in group chats with an active game!')
-      return
-    }
+    bot.command('mycards', async (ctx) => {
+        // Only allow in group chats where there's an active game
+        if (ctx.chat?.type !== 'group' && ctx.chat?.type !== 'supergroup') {
+            await ctx.reply('❌ This command only works in group chats with an active game!')
+            return
+        }
 
-    const groupChatId = ctx.chat.id
-    const userId = ctx.from?.id
-    const firstName = ctx.from?.first_name || 'Unknown'
+        const groupChatId = ctx.chat.id
+        const userId = ctx.from?.id
+        const firstName = ctx.from?.first_name || 'Unknown'
 
-    if (!userId) {
-      await ctx.reply('❌ Could not identify user.')
-      return
-    }
+        if (!userId) {
+            await ctx.reply('❌ Could not identify user.')
+            return
+        }
 
-    const game = getGame(groupChatId)
-    if (!game || game.state !== 'in_progress') {
-      await ctx.reply('❌ No active game in this group.')
-      return
-    }
+        const game = getGame(groupChatId)
+        if (!game || game.state !== 'in_progress') {
+            await ctx.reply('❌ No active game in this group.')
+            return
+        }
 
-    const player = game.players.find(p => p.id === userId)
-    if (!player) {
-      await ctx.reply('❌ You are not part of this game.')
-      return
-    }
+        const player = game.players.find(p => p.id === userId)
+        if (!player) {
+            await ctx.reply('❌ You are not part of this game.')
+            return
+        }
 
-    // Try to send cards via private message
-    const success = await sendPlayerHand(bot, groupChatId, userId, firstName)
-    if (success) {
-      await ctx.reply(`✅ ${firstName}, I've sent your cards via private message!`)
-    } else {
-      await ctx.reply(
-        `❌ ${firstName}, I still can't send you private messages.\n\n` +
-        `Please send /start to @${ctx.me.username} in private chat first!`
-      )
-    }
-  })
+        // Try to send cards via private message
+        const success = await sendPlayerHand(bot, groupChatId, userId, firstName)
+        if (success) {
+            await ctx.reply(`✅ ${firstName}, I've sent your cards via private message!`)
+        } else {
+            await ctx.reply(
+                `❌ ${firstName}, I still can't send you private messages.\n\n` +
+                `Please send /start to @${ctx.me.username} in private chat first!`
+            )
+        }
+    })
 }

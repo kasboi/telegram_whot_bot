@@ -17,6 +17,7 @@
     "proseWrap": "preserve"
   },
   "tasks": {
-    "start": "deno run --allow-all src/bot.ts"
+    "start": "deno run --allow-all src/bot.ts",
+    "check": "deno check --allow-import src/bot.ts"
   }
 }
