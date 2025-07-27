@@ -28,6 +28,7 @@ export function createGame(groupChatId: number, creatorId: number, creatorName: 
     players: [],
     createdAt: new Date(),
     reshuffleCount: 0,
+    suddenDeath: false,
   }
 
   gameState.set(groupChatId, newGame)
@@ -122,6 +123,121 @@ export function getGameStats(): { totalGames: number; gameStates: Record<string,
   })
 
   return { totalGames, gameStates }
+}
+
+// ======================================
+// DECK EXHAUSTION SAFETY FUNCTIONS
+// ======================================
+
+/**
+ * Ensures the deck has enough cards, handling reshuffle and sudden death modes
+ * Returns: {hasEnoughCards: boolean, reshuffledNow: boolean}
+ */
+function ensureDeckHasCards(game: GameSession, cardsNeeded: number): {hasEnoughCards: boolean, reshuffledNow: boolean} {
+  if (game.deck!.length >= cardsNeeded) {
+    return {hasEnoughCards: true, reshuffledNow: false}
+  }
+  
+  logger.info('Deck exhaustion detected', { 
+    groupChatId: game.id, 
+    cardsInDeck: game.deck!.length, 
+    cardsNeeded,
+    reshuffleCount: game.reshuffleCount 
+  })
+  
+  // First exhaustion - attempt reshuffle
+  if (game.reshuffleCount === 0) {
+    reshuffleDeckFromDiscard(game)
+    game.reshuffleCount = 1
+    logger.info('First deck reshuffle completed', { 
+      groupChatId: game.id, 
+      newDeckSize: game.deck!.length 
+    })
+    return {hasEnoughCards: game.deck!.length >= cardsNeeded, reshuffledNow: true}
+  }
+  
+  // Second exhaustion - enter sudden death mode
+  if (game.reshuffleCount === 1 && game.deck!.length === 0) {
+    game.suddenDeath = true
+    logger.info('Sudden Death mode activated - no more drawing allowed', { 
+      groupChatId: game.id 
+    })
+    return {hasEnoughCards: false, reshuffledNow: false}
+  }
+  
+  // Still have some cards after first reshuffle
+  return {hasEnoughCards: game.deck!.length >= cardsNeeded, reshuffledNow: false}
+}
+
+/**
+ * Reshuffles discard pile back into deck, keeping top card
+ */
+function reshuffleDeckFromDiscard(game: GameSession): void {
+  if (!game.discardPile || game.discardPile.length <= 1) {
+    logger.warn('Cannot reshuffle - discard pile too small', { 
+      groupChatId: game.id, 
+      discardPileSize: game.discardPile?.length || 0 
+    })
+    return
+  }
+  
+  // Keep the top card, reshuffle the rest
+  const topCard: Card = game.discardPile.pop()!
+  const cardsToReshuffle = [...game.discardPile]
+  
+  // Shuffle and add to deck
+  game.deck = [...(game.deck || []), ...shuffleDeck(cardsToReshuffle)]
+  game.discardPile = [topCard]
+  
+  logger.info('Deck reshuffled from discard pile', { 
+    groupChatId: game.id, 
+    cardsReshuffled: cardsToReshuffle.length,
+    newDeckSize: game.deck.length 
+  })
+}
+
+/**
+ * Safely draws cards for a player, respecting deck exhaustion rules
+ * Returns: {cardsDrawn: number, reshuffledNow: boolean}
+ */
+function safeDrawCards(game: GameSession, playerIndex: number, count: number): {cardsDrawn: number, reshuffledNow: boolean} {
+  if (game.suddenDeath) {
+    logger.info('Draw request denied - Sudden Death mode active', { 
+      groupChatId: game.id, 
+      playerIndex, 
+      requestedCards: count 
+    })
+    return {cardsDrawn: 0, reshuffledNow: false} // No drawing allowed in sudden death
+  }
+  
+  const deckCheck = ensureDeckHasCards(game, count)
+  if (!deckCheck.hasEnoughCards) {
+    // Can only draw what's available
+    count = game.deck!.length
+    logger.info('Partial draw due to deck exhaustion', { 
+      groupChatId: game.id, 
+      playerIndex, 
+      cardsAvailable: count 
+    })
+  }
+  
+  let drawn = 0
+  for (let i = 0; i < count && game.deck!.length > 0; i++) {
+    const card = game.deck!.pop()
+    if (card) {
+      game.players[playerIndex].hand!.push(card)
+      drawn++
+    }
+  }
+  
+  logger.info('Cards drawn safely', { 
+    groupChatId: game.id, 
+    playerIndex, 
+    cardsDrawn: drawn, 
+    remainingInDeck: game.deck!.length 
+  })
+  
+  return {cardsDrawn: drawn, reshuffledNow: deckCheck.reshuffledNow}
 }
 
 // Stage 2: Start the actual game with cards
@@ -284,38 +400,32 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
       game.currentPlayerIndex = (game.currentPlayerIndex + 2) % game.players.length
       effectDescription = `Suspension - Skipped ${skippedPlayer.firstName}'s turn`
     } else if (effect.type === 'general_market') {
-      // All other players draw one card
-      let playersWhoGotCards = []
+      // All other players draw one card using safe drawing
+      const playersWhoGotCards = []
+      const playersNeedingCards = game.players.length - 1
+      
+      // Check if we can provide cards to all players
+      if (!ensureDeckHasCards(game, playersNeedingCards)) {
+        if (game.suddenDeath) {
+          // Sudden death mode triggered - end game
+          const scores = game.players.map((p) => ({
+            name: p.firstName,
+            score: calculateHandValue(p.hand || []),
+            player: p,
+          }))
+          scores.sort((a, b) => a.score - b.score)
+          game.winner = scores[0].player
+          game.state = 'ended'
+          logger.info('Game ended by General Market sudden death', { groupChatId, winner: game.winner.firstName })
+          return { success: true, message: '💀 Sudden Death! Game ended during General Market', gameEnded: true, winner: game.winner }
+        }
+      }
+      
+      // Safe drawing for each player
       for (let i = 0; i < game.players.length; i++) {
         if (i !== game.currentPlayerIndex) {
-          // Check deck exhaustion before drawing for each player
-          if (game.deck!.length === 0) {
-            if (game.reshuffleCount === 0) {
-              // First exhaustion - reshuffle discard pile
-              game.reshuffleCount = 1
-              const topCard: Card = game.discardPile!.pop()!
-              const cardsToReshuffle = game.discardPile!
-              game.deck = shuffleDeck(cardsToReshuffle)
-              game.discardPile = [topCard]
-              logger.info('Deck reshuffled during General Market', { groupChatId, newDeckSize: game.deck.length })
-            } else {
-              // Second exhaustion - trigger sudden death
-              game.state = 'ended'
-              const scores = game.players.map((p) => ({
-                name: p.firstName,
-                score: calculateHandValue(p.hand || []),
-                player: p,
-              }))
-              scores.sort((a, b) => a.score - b.score)
-              game.winner = scores[0].player
-              logger.info('Game ended by General Market sudden death', { groupChatId, winner: game.winner.firstName })
-              return { success: true, message: 'Sudden-Death Showdown during General Market!', gameEnded: true, winner: game.winner }
-            }
-          }
-
-          const drawnCard = game.deck!.pop()
-          if (drawnCard) {
-            game.players[i].hand!.push(drawnCard)
+          const drawResult = safeDrawCards(game, i, 1)
+          if (drawResult.cardsDrawn > 0) {
             playersWhoGotCards.push(game.players[i].firstName)
           }
         }
@@ -398,27 +508,18 @@ export function drawCard(groupChatId: number, userId: number): {
     return { success: false, message: 'Player not found in this game' }
   }
 
-  if (game.currentPlayerIndex !== game.players.indexOf(player)) {
+  const playerIndex = game.players.indexOf(player)
+  if (game.currentPlayerIndex !== playerIndex) {
     return { success: false, message: "It's not your turn" }
   }
 
-  // --- DECK EXHAUSTION & DRAW LOGIC ---
-  let reshuffled = false
-  const handleDeckExhaustion = () => {
-    if (game.deck!.length > 0) return false // Deck not empty
-
-    if (game.reshuffleCount === 0) {
-      game.reshuffleCount = 1
-      const topCard = game.discardPile!.pop()!
-      const cardsToReshuffle = game.discardPile!
-      game.deck = shuffleDeck(cardsToReshuffle)
-      game.discardPile = [topCard]
-      reshuffled = true
-      logger.info('Deck reshuffled', { groupChatId, newDeckSize: game.deck.length })
-      return false // Reshuffled, continue drawing
-    } else {
-      // Sudden-Death Showdown
-      game.state = 'ended'
+  // Handle pending effects first (Pick Two/Three cards)
+  if (game.pendingEffect && game.pendingEffect.type === 'pick_cards') {
+    const cardsToDraw = game.pendingEffect.amount
+    const drawResult = safeDrawCards(game, playerIndex, cardsToDraw)
+    
+    // Check if game ended due to sudden death
+    if (game.suddenDeath && drawResult.cardsDrawn === 0) {
       const scores = game.players.map((p) => ({
         name: p.firstName,
         score: calculateHandValue(p.hand || []),
@@ -426,57 +527,61 @@ export function drawCard(groupChatId: number, userId: number): {
       }))
       scores.sort((a, b) => a.score - b.score)
       game.winner = scores[0].player
-      logger.info('Game ended by Forced Tender', { groupChatId, winner: game.winner.firstName, scores })
-      return true // Game ended
-    }
-  }
-
-  // Handle pending effects first
-  if (game.pendingEffect && game.pendingEffect.type === 'pick_cards') {
-    const cardsToDraw = game.pendingEffect.amount
-    const drawnCards: Card[] = []
-
-    for (let i = 0; i < cardsToDraw; i++) {
-      if (handleDeckExhaustion()) {
-        // Game ended mid-draw
-        return {
-          success: true,
-          message: 'Sudden-Death Showdown! The player with the lowest score wins.',
-          gameEnded: true,
-          tenderResult: { winner: game.winner!, scores: game.players.map(p => ({ name: p.firstName, score: calculateHandValue(p.hand!) })) },
-        }
+      game.state = 'ended'
+      logger.info('Game ended by sudden death during penalty draw', { groupChatId, winner: game.winner.firstName })
+      return {
+        success: true,
+        message: '💀 Sudden Death! Game ended during penalty draw',
+        gameEnded: true,
+        tenderResult: { winner: game.winner, scores: scores.map(s => ({ name: s.name, score: s.score })) }
       }
-      const card = game.deck!.pop()!
-      player.hand!.push(card)
-      drawnCards.push(card)
     }
-
+    
     game.pendingEffect = undefined
     game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
-    logger.info('Penalty cards drawn', { groupChatId, player: player.firstName, cardsDrawn: drawnCards.length, newHandSize: player.hand!.length })
+    
+    logger.info('Penalty cards drawn', { groupChatId, player: player.firstName, cardsDrawn: drawResult.cardsDrawn, newHandSize: player.hand!.length })
+    
     return {
       success: true,
-      message: `Drew ${drawnCards.length} cards due to pending effect`,
-      cardDrawn: drawnCards[0],
-      reshuffled,
+      message: drawResult.cardsDrawn > 0 ? `Drew ${drawResult.cardsDrawn} cards due to penalty effect` : 'No cards available to draw',
+      cardDrawn: drawResult.cardsDrawn > 0 ? player.hand![player.hand!.length - 1] : undefined,
+      reshuffled: drawResult.reshuffledNow,
     }
   }
 
   // Normal card draw
-  if (handleDeckExhaustion()) {
+  const drawResult = safeDrawCards(game, playerIndex, 1)
+  
+  // Check if game ended due to sudden death
+  if (game.suddenDeath && drawResult.cardsDrawn === 0) {
+    const scores = game.players.map((p) => ({
+      name: p.firstName,
+      score: calculateHandValue(p.hand || []),
+      player: p,
+    }))
+    scores.sort((a, b) => a.score - b.score)
+    game.winner = scores[0].player
+    game.state = 'ended'
+    logger.info('Game ended by sudden death during normal draw', { groupChatId, winner: game.winner.firstName })
     return {
       success: true,
-      message: 'Sudden-Death Showdown! The player with the lowest score wins.',
+      message: '💀 Sudden Death! No more cards available',
       gameEnded: true,
-      tenderResult: { winner: game.winner!, scores: game.players.map(p => ({ name: p.firstName, score: calculateHandValue(p.hand!) })) },
+      tenderResult: { winner: game.winner, scores: scores.map(s => ({ name: s.name, score: s.score })) }
     }
   }
-
-  const drawnCard = game.deck!.pop()!
-  player.hand!.push(drawnCard)
+  
   game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
+  
   logger.info('Card drawn', { groupChatId, player: player.firstName, newHandSize: player.hand!.length })
-  return { success: true, message: 'Drew a card', cardDrawn: drawnCard, reshuffled }
+  
+  return { 
+    success: true, 
+    message: drawResult.cardsDrawn > 0 ? 'Drew a card' : 'No cards available to draw', 
+    cardDrawn: drawResult.cardsDrawn > 0 ? player.hand![player.hand!.length - 1] : undefined,
+    reshuffled: drawResult.reshuffledNow
+  }
 }
 
 // Handle Whot symbol selection

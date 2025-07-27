@@ -57,5 +57,6 @@ export interface GameSession {
   chosenSymbol?: string // For Whot card symbol selection
   winner?: Player      // Game winner
   lastActionMessage?: string // Latest game action announcement for private chats
-  reshuffleCount?: number // Number of times deck has been reshuffled
+  reshuffleCount: number // Number of times deck has been reshuffled (0 = not reshuffled, 1 = reshuffled once)
+  suddenDeath: boolean // True when deck exhausted twice - no more drawing allowed
 }
