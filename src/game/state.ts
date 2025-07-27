@@ -1,10 +1,24 @@
 import { GameSession, Player, Card } from '../types/game.ts'
 import { logger } from '../utils/logger.ts'
-import { createDeck, dealCards, canPlayCardWithChosen } from './cards.ts'
+import { createDeck, dealCards, canPlayCardWithChosen, shuffleDeck } from './cards.ts'
 import { getCardEffect, canPlayDuringEffect } from './special.ts'
 
 // Global game state storage (in-memory for MVP)
 export const gameState = new Map<number, GameSession>()
+
+/**
+ * Calculates the point value of a player's hand for Tender mode.
+ * - Star cards are worth double points.
+ * - Whot cards are worth 20 points.
+ */
+function calculateHandValue(hand: Card[]): number {
+  return hand.reduce((total, card) => {
+    if (card.symbol === 'star') {
+      return total + card.number * 2
+    }
+    return total + card.number
+  }, 0)
+}
 
 export function createGame(groupChatId: number, creatorId: number, creatorName: string): GameSession {
   const newGame: GameSession = {
@@ -12,7 +26,8 @@ export function createGame(groupChatId: number, creatorId: number, creatorName: 
     state: 'waiting_for_players',
     creatorId,
     players: [],
-    createdAt: new Date()
+    createdAt: new Date(),
+    reshuffleCount: 0,
   }
 
   gameState.set(groupChatId, newGame)
@@ -332,28 +347,68 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
 }
 
 // Draw a card from the deck
-export function drawCard(groupChatId: number, userId: number): { success: boolean; message: string; cardDrawn?: Card } {
+export function drawCard(groupChatId: number, userId: number): {
+  success: boolean
+  message: string
+  cardDrawn?: Card
+  gameEnded?: boolean
+  reshuffled?: boolean
+  tenderResult?: { winner: Player; scores: { name: string; score: number }[] }
+} {
   const game = gameState.get(groupChatId)
   if (!game || game.state !== 'in_progress') {
-    return { success: false, message: "No active game found" }
+    return { success: false, message: 'No active game found' }
   }
 
-  const player = game.players.find(p => p.id === userId)
+  const player = game.players.find((p) => p.id === userId)
   if (!player) {
-    return { success: false, message: "Player not found in this game" }
+    return { success: false, message: 'Player not found in this game' }
   }
 
   if (game.currentPlayerIndex !== game.players.indexOf(player)) {
     return { success: false, message: "It's not your turn" }
   }
 
+  // --- DECK EXHAUSTION LOGIC ---
   if (game.deck!.length === 0) {
-    logger.error('Deck exhausted during card draw', {
-      groupChatId,
-      player: player.firstName,
-      playersHandSizes: game.players.map(p => ({ name: p.firstName, cards: p.hand?.length || 0 }))
-    })
-    return { success: false, message: "No more cards in deck" }
+    if (game.reshuffleCount === 0) {
+      // First time deck is empty: Reshuffle
+      game.reshuffleCount = 1
+      const topCard = game.discardPile!.pop()!
+      const cardsToReshuffle = game.discardPile!
+      game.deck = shuffleDeck(cardsToReshuffle)
+      game.discardPile = [topCard]
+
+      logger.info('Deck reshuffled', { groupChatId, newDeckSize: game.deck.length })
+
+      // After reshuffling, proceed to draw a card for the pending effect or the player
+    } else {
+      // Second time deck is empty: Sudden-Death Showdown
+      game.state = 'ended'
+      const scores = game.players.map((p) => ({
+        name: p.firstName,
+        score: calculateHandValue(p.hand || []),
+        player: p,
+      }))
+
+      scores.sort((a, b) => a.score - b.score) // Sort by lowest score
+
+      const winner = scores[0].player
+      game.winner = winner
+
+      logger.info('Game ended by Forced Tender', {
+        groupChatId,
+        winner: winner.firstName,
+        scores,
+      })
+
+      return {
+        success: true,
+        message: 'Sudden-Death Showdown! The player with the lowest score wins.',
+        gameEnded: true,
+        tenderResult: { winner, scores: scores.map(s => ({ name: s.name, score: s.score })) },
+      }
+    }
   }
 
   // Handle pending effects first
@@ -362,7 +417,14 @@ export function drawCard(groupChatId: number, userId: number): { success: boolea
     const cardsToDraw = game.pendingEffect.amount
     const drawnCards: Card[] = []
 
-    for (let i = 0; i < cardsToDraw && game.deck!.length > 0; i++) {
+    for (let i = 0; i < cardsToDraw; i++) {
+      if (game.deck!.length === 0) {
+        // This is an edge case within an edge case. If the deck runs out *while* drawing penalty cards,
+        // we should probably trigger the reshuffle/tender logic right away.
+        // For now, we'll just stop drawing. The next draw attempt will trigger the main logic.
+        logger.warn('Deck exhausted during penalty draw', { groupChatId })
+        break
+      }
       const card = game.deck!.pop()!
       player.hand!.push(card)
       drawnCards.push(card)
@@ -377,16 +439,16 @@ export function drawCard(groupChatId: number, userId: number): { success: boolea
     logger.info('Penalty cards drawn', {
       groupChatId,
       player: player.firstName,
-      cardsDrawn: cardsToDraw,
+      cardsDrawn: drawnCards.length,
       newHandSize: player.hand!.length,
       nextPlayer: nextPlayer.firstName,
-      reason: 'pending_effect'
+      reason: 'pending_effect',
     })
 
     return {
       success: true,
-      message: `Drew ${cardsToDraw} cards due to pending effect`,
-      cardDrawn: drawnCards[0] // Return first card for display
+      message: `Drew ${drawnCards.length} cards due to pending effect`,
+      cardDrawn: drawnCards[0], // Return first card for display
     }
   }
 
@@ -399,7 +461,7 @@ export function drawCard(groupChatId: number, userId: number): { success: boolea
     logger.warn('Deck running low', {
       groupChatId,
       cardsRemaining: game.deck!.length,
-      totalPlayersCards: game.players.reduce((sum, p) => sum + (p.hand?.length || 0), 0)
+      totalPlayersCards: game.players.reduce((sum, p) => sum + (p.hand?.length || 0), 0),
     })
   }
 
@@ -414,10 +476,10 @@ export function drawCard(groupChatId: number, userId: number): { success: boolea
     cardDrawn: { symbol: drawnCard.symbol, number: drawnCard.number },
     newHandSize: player.hand!.length,
     nextPlayer: nextPlayer.firstName,
-    reason: 'voluntary'
+    reason: 'voluntary',
   })
 
-  return { success: true, message: "Drew a card", cardDrawn: drawnCard }
+  return { success: true, message: 'Drew a card', cardDrawn: drawnCard }
 }
 
 // Handle Whot symbol selection

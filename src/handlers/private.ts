@@ -3,6 +3,8 @@ import { getGame, getCurrentPlayer, getTopCard, playCard, drawCard, selectWhotSy
 import { getValidCards, formatCard, getCardEmoji } from '../game/cards.ts'
 import { type Card } from '../types/game.ts'
 import { logger } from '../utils/logger.ts'
+import { generateGroupStatusMessage } from './updates.ts'
+
 
 // Send initial hand to player when game starts
 export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: number, firstName: string): Promise<boolean> {
@@ -32,16 +34,9 @@ export async function sendPlayerHand(bot: Bot, groupChatId: number, userId: numb
 
   let messageText = `🎴 **Your Whot Hand** 🎴\n\n`
 
-  // Add game state information (same as group chat)
-  messageText += `👥 **Game Status:**\n`
-  game.players.forEach((p, index) => {
-    const isCurrentPlayer = index === game.currentPlayerIndex
-    const turnIndicator = isCurrentPlayer ? '👉' : '✅'
-    const isThisPlayer = p.id === userId ? ' (YOU)' : ''
-    messageText += `${index + 1}. ${p.firstName}${isThisPlayer} ${turnIndicator} (${p.hand?.length || 0} cards)\n`
-  })
-
-  messageText += `\n🃏 Top card: ${formatCard(topCard)}\n\n`
+  // Add game state information
+  messageText += `🃏 Top card: ${formatCard(topCard)}\n`
+  messageText += `📦 Deck: ${game.deck?.length || 0} cards left\n\n`
 
   // Show chosen symbol if active
   if (game.chosenSymbol) {
@@ -257,35 +252,10 @@ export function handleCardPlay(bot: Bot) {
     // Announce play in group chat
     try {
       const gameForGroup = getGame(groupChatId)
-      const newTopCard = getTopCard(groupChatId)
-      const currentPlayer = getCurrentPlayer(groupChatId)
-
-      let announceMessage = ''
-
-      if (result.gameEnded) {
-        announceMessage = `🏆 **${userName} WINS!** 🏆\n\nGame over! 🎉`
-      } else {
-        // Use the already stored action message
-        announceMessage = gameForGroup!.lastActionMessage + `\n\n🃏 Top card: ${formatCard(newTopCard!)}`
-
-        // Show chosen symbol if active
-        if (gameForGroup!.chosenSymbol) {
-          const symbolEmojis: Record<string, string> = {
-            circle: '⚪',
-            triangle: '🔺',
-            cross: '✖️',
-            square: '🟦',
-            star: '⭐'
-          }
-          announceMessage += `\n🎯 Active symbol: ${symbolEmojis[gameForGroup!.chosenSymbol]} ${gameForGroup!.chosenSymbol}`
-        }
-
-        if (!result.requiresSymbolChoice) {
-          announceMessage += `\n🎯 Current turn: **${currentPlayer?.firstName}**`
-        }
+      if (gameForGroup) {
+        const announceMessage = generateGroupStatusMessage(gameForGroup)
+        await bot.api.sendMessage(groupChatId, announceMessage, { parse_mode: 'Markdown' })
       }
-
-      await bot.api.sendMessage(groupChatId, announceMessage, { parse_mode: 'Markdown' })
     } catch (error) {
       logger.error('Announcement failed', { groupChatId, userId, error: error instanceof Error ? error.message : String(error) })
     }
@@ -300,7 +270,7 @@ export function handleDrawCard(bot: Bot) {
     const userName = ctx.from.first_name || 'Unknown'
 
     const game = getGame(groupChatId)
-    if (!game || game.state !== 'in_progress') {
+    if (!game || (game.state !== 'in_progress' && game.state !== 'ended')) {
       await ctx.answerCallbackQuery('❌ Game not found or not in progress')
       return
     }
@@ -319,56 +289,49 @@ export function handleDrawCard(bot: Bot) {
       return
     }
 
-    // Check if this was a penalty draw or normal draw
-    const gameState = getGame(groupChatId)
-    const wasPenalty = result.message.includes('due to pending effect')
+    // --- Handle different draw outcomes ---
 
-    // Store draw action messages BEFORE updating hands
+    if (result.gameEnded && result.tenderResult) {
+      // Game ended with a Sudden-Death Showdown
+      const { winner, scores } = result.tenderResult
+      let tenderMessage = `🚨 **SUDDEN-DEATH SHOWDOWN!** 🚨\n\n`
+      tenderMessage += `The deck ran out a second time! The game ends now. Lowest score wins.\n\n`
+      tenderMessage += `**Final Scores:**\n`
+      scores.forEach(s => {
+        tenderMessage += `• ${s.name}: **${s.score}** points\n`
+      })
+      tenderMessage += `\n🏆 The winner is **${winner.firstName}**!`
+
+      await bot.api.sendMessage(groupChatId, tenderMessage, { parse_mode: 'Markdown' })
+      await ctx.answerCallbackQuery('The game has ended!')
+      return
+    }
+
+    if (result.reshuffled) {
+      // Deck was reshuffled
+      const reshuffleMessage = `⚠️ **The deck ran out!** ⚠️\n\nThe discard pile has been shuffled to create a new deck.\n\nIf the deck runs out again, it's a **SUDDEN-DEATH SHOWDOWN!**`
+      await bot.api.sendMessage(groupChatId, reshuffleMessage, { parse_mode: 'Markdown' })
+    }
+
+    // Standard draw or penalty draw
+    const wasPenalty = result.message.includes('due to pending effect')
     if (wasPenalty) {
-      // Extract number of cards from message
       const cardCount = result.message.match(/(\d+)/)?.[1] || '?'
       await ctx.answerCallbackQuery(`📥 Drew ${cardCount} cards (penalty)`)
-
-      // Store penalty action for private chats
-      const gameState = getGame(groupChatId)
-      if (gameState) {
-        gameState.lastActionMessage = `📥 **${userName}** drew ${cardCount} cards due to special effect`
-      }
+      if (game) game.lastActionMessage = `📥 **${userName}** drew ${cardCount} cards due to special effect`
     } else {
       await ctx.answerCallbackQuery('🎴 Drew a card!')
-
-      // Store normal draw action for private chats
-      const gameState = getGame(groupChatId)
-      if (gameState) {
-        gameState.lastActionMessage = `🎴 **${userName}** drew a card`
-      }
+      if (game) game.lastActionMessage = `🎴 **${userName}** drew a card`
     }
 
-    // Update all players' hands to reflect turn change (now with correct action message)
+    // Update all players' hands and announce the new game state
     await updateAllPlayerHands(bot, groupChatId)
-
-    // Announce penalty in group (if applicable)
-    if (wasPenalty) {
-      const cardCount = result.message.match(/(\d+)/)?.[1] || '?'
-      try {
-        const currentPlayer = getCurrentPlayer(groupChatId)
-        const topCard = getTopCard(groupChatId)
-        await bot.api.sendMessage(groupChatId,
-          `📥 **${userName}** drew ${cardCount} cards due to special effect\n\n🃏 Top card: ${formatCard(topCard!)}\n🎯 Current turn: **${currentPlayer?.firstName}**`,
-          { parse_mode: 'Markdown' }
-        )
-      } catch (error) {
-        logger.error('Failed to announce penalty draw', { groupChatId, userId, error })
-      }
-    }
-
-    // Announce draw in group chat
     try {
-      const currentPlayer = getCurrentPlayer(groupChatId)
-      const topCard = getTopCard(groupChatId)
-      const announceMessage = `🎴 **${userName}** drew a card\n\n🃏 Top card: ${formatCard(topCard!)}\n🎯 Current turn: **${currentPlayer?.firstName}**`
-
-      await bot.api.sendMessage(groupChatId, announceMessage, { parse_mode: 'Markdown' })
+      const gameForGroup = getGame(groupChatId)
+      if (gameForGroup) {
+        const announceMessage = generateGroupStatusMessage(gameForGroup)
+        await bot.api.sendMessage(groupChatId, announceMessage, { parse_mode: 'Markdown' })
+      }
     } catch (error) {
       logger.error('Announcement failed', { groupChatId, userId, error: error instanceof Error ? error.message : String(error) })
     }
@@ -447,13 +410,11 @@ export function handleSymbolSelection(bot: Bot) {
 
     // Announce symbol selection in group chat
     try {
-      const currentPlayer = getCurrentPlayer(groupChatId)
-      const newTopCard = getTopCard(groupChatId)
-
-      // Use the already created action message
-      const announceMessage = actionMessage + `\n\n🃏 Top card: ${formatCard(newTopCard!)}\n🎯 Current turn: **${currentPlayer?.firstName}**`
-
-      await bot.api.sendMessage(groupChatId, announceMessage, { parse_mode: 'Markdown' })
+      const gameForGroup = getGame(groupChatId)
+      if (gameForGroup) {
+        const announceMessage = generateGroupStatusMessage(gameForGroup)
+        await bot.api.sendMessage(groupChatId, announceMessage, { parse_mode: 'Markdown' })
+      }
     } catch (error) {
       logger.error('Announcement failed', { groupChatId, userId, error: error instanceof Error ? error.message : String(error) })
     }

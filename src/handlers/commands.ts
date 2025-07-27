@@ -3,6 +3,7 @@ import { createGame, getGame, addPlayer, canStartGame, startGameWithCards, getCu
 import { logger } from '../utils/logger.ts'
 import { formatCard } from '../game/cards.ts'
 import { sendPlayerHand } from './private.ts'
+import { generateGroupStatusMessage } from "./updates.ts"
 
 export function handleStartGame(bot: Bot) {
   bot.command('startgame', async (ctx: Context) => {
@@ -169,19 +170,7 @@ export function handleStartButton(bot: Bot) {
     await ctx.answerCallbackQuery('🎮 Game started!')
 
     // Update message to show game has started
-    let messageText = `🎮 **Whot Game - IN PROGRESS** 🎮\n\n` +
-      `👥 Players:\n`
-
-    game.players.forEach((player, index) => {
-      const isCurrentPlayer = index === game.currentPlayerIndex
-      const turnIndicator = isCurrentPlayer ? '👉' : '✅'
-      messageText += `${index + 1}. ${player.firstName} ${turnIndicator} (${player.hand?.length || 0} cards)\n`
-    })
-
-    messageText += `\n🃏 Top card: ${formatCard(topCard!)}\n`
-    messageText += `🎯 Current turn: ${currentPlayer?.firstName}\n`
-    messageText += `\n📱 Players will receive their cards in private chat.`
-
+    const messageText = generateGroupStatusMessage(game)
     await ctx.editMessageText(messageText, {
       parse_mode: 'Markdown'
     })

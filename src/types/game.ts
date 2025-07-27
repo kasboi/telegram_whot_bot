@@ -55,4 +55,5 @@ export interface GameSession {
   chosenSymbol?: string // For Whot card symbol selection
   winner?: Player      // Game winner
   lastActionMessage?: string // Latest game action announcement for private chats
+  reshuffleCount?: number // Number of times deck has been reshuffled
 }

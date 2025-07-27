@@ -35,6 +35,7 @@ logs
 
 # Coding agent files
 .github/
+.gemini/
 
 # OS
 .DS_Store
@@ -48,3 +49,4 @@ out/
 # Temporary files
 *.tmp
 *.temp
+GEMINI.md
