@@ -50,3 +50,4 @@ out/
 *.tmp
 *.temp
 GEMINI.md
+bot.log.json

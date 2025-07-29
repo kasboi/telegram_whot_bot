@@ -7,6 +7,8 @@ import "jsr:@std/dotenv/load"
 
 // Get bot token from environment
 const botToken = Deno.env.get('TELEGRAM_BOT_TOKEN')
+
+// Validate bot token
 if (!botToken) {
   logger.error('TELEGRAM_BOT_TOKEN environment variable is required')
   Deno.exit(1)
@@ -35,7 +37,7 @@ handleCardPlay(bot)
 handleDrawCard(bot)
 handleSymbolSelection(bot)
 
-// Basic start message
+// Handle /start command
 bot.command('start', async (ctx) => {
   const chatType = ctx.chat.type
 

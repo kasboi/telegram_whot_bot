@@ -1,67 +1,90 @@
 # Telegram Whot Game Bot
 
-## Stage 1 Complete: Foundation ✅ + Bug Fixes
+This is a Telegram bot that allows users to play the classic card game Whot with friends in a group chat.
 
-### What's Implemented:
+## Features
 
-- ✅ Basic bot setup with grammY framework
-- ✅ `/startgame` command (group chats only)
-- ✅ Join game functionality with inline buttons
-- ✅ Start game button (creator-only)
-- ✅ Basic game state management
-- ✅ Player tracking and validation
-- ✅ **File logging system** (logs to `bot.log`)
-- ✅ **Improved callback query feedback** with alerts
-- ✅ **Fixed join game state logic** (allows joining after 2+ players)
+-   **Multiplayer Gameplay:** Play Whot with 2 or more players in any Telegram group chat.
+-   **Interactive UI:** The bot uses inline buttons for all actions, from joining a game to playing cards.
+-   **Private Hand Management:** Players manage their cards and make their moves in a private chat with the bot, keeping their hand secret.
+-   **Full Whot Rule Set:** Implements all standard Whot card rules, including special cards like "Pick Two", "Suspension", "General Market", and the mighty "Whot" card itself.
+-   **Automatic State Management:** The bot handles all the game logic, including turns, card validation, and special effects.
+-   **Sudden Death Mode:** If the draw pile is exhausted twice, the game enters a "Sudden Death" round where the player with the lowest hand value wins.
 
-### Bug Fixes Applied:
+## Getting Started
 
-1. ✅ **Join game feedback**: Now uses `show_alert` for better user feedback
-2. ✅ **State transition bug**: Fixed issue where players couldn't join after game became "ready_to_start"
-3. ✅ **Comprehensive logging**: All bot actions now logged to `bot.log` with structured data
-4. ✅ **Error handling**: Better error messages and logging for debugging
+A new developer can get the bot up and running on their local machine by following these steps.
 
-### How to Run:
+### Prerequisites
 
-1. Get a bot token from [@BotFather](https://t.me/botfather) on Telegram
-2. Set environment variable:
-   ```bash
-   export TELEGRAM_BOT_TOKEN="your_bot_token_here"
-   ```
-3. Run the bot:
-   ```bash
-   deno run --allow-net --allow-env src/bot.ts
-   ```
+-   [Deno](https://deno.land) runtime installed on your machine.
+-   A Telegram Bot Token. You can get one by talking to the [@BotFather](https://t.me/BotFather) on Telegram.
 
-### Testing:
+### Installation & Running
 
-1. Add the bot to a group chat
-2. Use `/startgame` to create a game
-3. Click "Join Game" to join (need 2+ players)
-4. Creator can click "Start Game" when ready
+1.  **Clone the repository:**
+    ```bash
+    git clone <repository_url>
+    cd telegram-whot-bot
+    ```
 
-### Next Stage (Stage 2):
+2.  **Set up Environment Variables:**
+    Create a file named `.env` in the root of the project and add your Telegram Bot Token:
+    ```
+    TELEGRAM_BOT_TOKEN="your_telegram_bot_token_here"
+    ```
+    The bot uses `jsr:@std/dotenv/load` to automatically load this variable.
 
-- Card deck implementation
-- Deal cards to players
-- Basic card play mechanics
-- Private chat card hands
+3.  **Run the bot using Deno Tasks:**
+    The project comes with pre-configured Deno tasks. To run the bot in development mode (with file watching and automatic restarts), use:
+    ```bash
+    deno task dev
+    ```
+    To run it for production, use:
+    ```bash
+    deno task start
+    ```
 
----
+## How to Play
 
-## Environment Variables
-
-- `TELEGRAM_BOT_TOKEN` - Required: Your Telegram bot token
+1.  Add your bot to a Telegram group chat.
+2.  Send the `/startgame` command to create a new game lobby.
+3.  Other players in the group can click the "Join Game" button.
+4.  Once at least two players have joined, the user who created the game can click the "Start Game" button.
+5.  The bot will announce that the game has started, and each player will receive their hand of cards in a private message from the bot.
+6.  Players take turns playing cards by clicking the buttons in their private chat. The bot will update the group chat with the game's progress.
+7.  The first player to run out of cards wins!
 
 ## Project Structure
 
+The codebase is organized into several directories to separate concerns:
+
 ```
-src/
-├── bot.ts              # Main bot entry point
-├── game/
-│   └── state.ts        # Game state management
-├── handlers/
-│   └── commands.ts     # Command handlers
-└── types/
-    └── game.ts         # TypeScript interfaces
+/home/generalkas/projects/telegram_whot_mvp/
+├── docs/
+│   ├── architecture.md   # High-level overview of the system architecture
+│   ├── contributing.md   # Guide for new developers
+│   └── game_logic.md     # Deep dive into the game mechanics
+├── src/
+│   ├── bot.ts            # Main application entry point and bot initialization
+│   ├── game/             # Core game logic (completely Telegram-agnostic)
+│   │   ├── cards.ts
+│   │   ├── special.ts
+│   │   └── state.ts
+│   ├── handlers/         # Logic for handling updates from Telegram
+│   │   ├── commands.ts
+│   │   ├── private.ts
+│   │   ├── stats.ts
+│   │   └── updates.ts
+│   ├── types/            # TypeScript type definitions
+│   └── utils/            # Utility functions (e.g., loggers)
+├── .gitignore
+├── deno.json           # Deno configuration and task runner
+└── README.md           # This file
 ```
+
+For a deeper understanding of the project, please refer to the documents in the `docs/` directory.
+
+## Contributing
+
+Contributions are welcome! Please read the [Contributing Guide](docs/contributing.md) for instructions on how to add new features, debug issues, and submit your changes.
