@@ -58,10 +58,23 @@ export function getPersistenceManager(): PersistenceManager | null {
  * Save game to persistence layer (non-blocking)
  */
 async function saveGameToPersistence(game: GameSession): Promise<void> {
-  if (!persistenceManager) return
+  logger.debug('saveGameToPersistence called', { 
+    groupChatId: game.id, 
+    state: game.state,
+    hasPersistenceManager: !!persistenceManager 
+  })
+  
+  if (!persistenceManager) {
+    logger.debug('No persistence manager available')
+    return
+  }
 
   try {
     await persistenceManager.saveGame(game)
+    logger.debug('Game saved to persistence successfully', { 
+      groupChatId: game.id, 
+      state: game.state 
+    })
   } catch (error) {
     logger.warn('Failed to persist game state', {
       groupChatId: game.id,
@@ -186,6 +199,14 @@ export function clearGame(groupChatId: number): boolean {
   }
 
   gameState.delete(groupChatId)
+  
+  // Also delete from persistence
+  if (persistenceManager) {
+    persistenceManager.deleteGame(groupChatId).catch(error => {
+      logger.warn('Failed to delete game from persistence', { groupChatId, error })
+    })
+  }
+  
   logger.info('Game cleared', { groupChatId, state: game.state, players: game.players.length })
   return true
 }
@@ -351,6 +372,17 @@ export function startGameWithCards(groupChatId: number): boolean {
     topCard: { id: discardPile[0]?.id, symbol: discardPile[0]?.symbol, number: discardPile[0]?.number },
     currentPlayer: game.players[0]?.firstName,
     playerHands: game.players.map(p => ({ name: p.firstName, cardCount: p.hand?.length || 0 }))
+  })
+
+  // Persist the game state with cards to KV storage
+  logger.debug('Attempting to persist game start', { 
+    groupChatId, 
+    hasPersistenceManager: !!persistenceManager,
+    gameState: game.state 
+  })
+  
+  saveGameToPersistence(game).catch(error => {
+    logger.warn('Failed to persist game start', { groupChatId, error })
   })
 
   return true

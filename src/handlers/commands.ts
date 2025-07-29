@@ -60,7 +60,31 @@ export function handleStartGame(bot: Bot) {
                 await ctx.reply('🎮 A game is already in progress in this group!')
                 return
             } else if (existingGame.state === 'ready_to_start' || existingGame.state === 'waiting_for_players') {
-                // Allow rejoining or restarting stale lobbies
+                // Check if the user is the creator and can start the game immediately
+                if (existingGame.creatorId === creatorId && existingGame.state === 'ready_to_start') {
+                    // Creator using /startgame on a ready game - auto-start it
+                    const success = startGameWithCards(groupChatId)
+                    if (success) {
+                        await ctx.reply('🎮 **Game Started!** 🎮\n\nCards have been dealt! Check your private messages for your hand.')
+                        
+                        const game = getGame(groupChatId)
+                        if (game) {
+                            const messageText = generateGroupStatusMessage(game)
+                            await ctx.reply(messageText, { parse_mode: 'Markdown' })
+
+                            // Send hands to all players
+                            for (const player of game.players) {
+                                await sendPlayerHand(bot, groupChatId, player.id, player.firstName)
+                            }
+                        }
+                        return
+                    } else {
+                        await ctx.reply('❌ Failed to start game. Please try again.')
+                        return
+                    }
+                }
+                
+                // Not creator or game not ready - show lobby
                 await ctx.reply('🔄 Rejoining existing game lobby...')
                 
                 // Update lobby message

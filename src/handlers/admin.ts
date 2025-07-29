@@ -102,6 +102,64 @@ export function handleAdminCommands(bot: Bot) {
     }
   })
 
+  // Command to force start a specific game (for debugging)
+  bot.command('forcestart', async (ctx) => {
+    if (!ctx.from || !isAdmin(ctx.from.id)) {
+      await ctx.reply('❌ Admin access required')
+      return
+    }
+
+    try {
+      const args = ctx.message?.text?.split(' ')
+      if (!args || args.length < 2) {
+        await ctx.reply('💡 Usage: `/forcestart <groupChatId>`\n\nUse /listgames to see available games.')
+        return
+      }
+
+      const groupChatId = parseInt(args[1])
+      if (isNaN(groupChatId)) {
+        await ctx.reply('❌ Invalid group chat ID')
+        return
+      }
+
+      const game = gameState.get(groupChatId)
+      if (!game) {
+        await ctx.reply('❌ Game not found')
+        return
+      }
+
+      if (game.state === 'in_progress') {
+        await ctx.reply('✅ Game is already in progress')
+        return
+      }
+
+      // Import the start function
+      const { startGameWithCards } = await import('../game/state.ts')
+      const success = startGameWithCards(groupChatId)
+      
+      if (success) {
+        await ctx.reply(`✅ Force started game ${groupChatId}\n\nState: ${game.state} → in_progress`)
+      } else {
+        await ctx.reply(`❌ Failed to force start game ${groupChatId}`)
+      }
+
+      logger.info('Admin force started game', {
+        userId: ctx.from?.id,
+        groupChatId,
+        oldState: 'ready_to_start',
+        newState: game.state,
+        playerCount: game.players.length
+      })
+
+    } catch (error) {
+      await ctx.reply(`❌ Force start failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      logger.error('Admin force start failed', {
+        userId: ctx.from?.id,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    }
+  })
+
   // Command to force clean a specific game
   bot.command('forceclean', async (ctx) => {
     if (!ctx.from || !isAdmin(ctx.from.id)) {
