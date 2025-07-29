@@ -3,6 +3,7 @@ import { createGame, getGame, addPlayer, removePlayer, canStartGame, startGameWi
 import { logger } from '../utils/logger.ts'
 import { sendPlayerHand } from './private.ts'
 import { generateGroupStatusMessage } from "./updates.ts"
+import { safeAnswerCallbackQuery } from '../utils/callback.ts'
 
 async function updateLobbyMessage(ctx: Context, groupChatId: number) {
     const game = getGame(groupChatId)
@@ -168,11 +169,11 @@ export function handleCallbackQuery(bot: Bot) {
                         errorMessage = '❌ Cannot join game at this time'
                     }
 
-                    await ctx.answerCallbackQuery({ text: errorMessage, show_alert: true })
+                    await safeAnswerCallbackQuery(ctx, { text: errorMessage, show_alert: true })
                     return
                 }
 
-                await ctx.answerCallbackQuery({ text: `✅ You joined the game!` })
+                await safeAnswerCallbackQuery(ctx, { text: `✅ You joined the game!` })
                 await updateLobbyMessage(ctx, groupChatId)
                 break
             }
@@ -181,11 +182,11 @@ export function handleCallbackQuery(bot: Bot) {
                 const result = removePlayer(groupChatId, userId)
 
                 if (!result.success) {
-                    await ctx.answerCallbackQuery({ text: '❌ You are not in the game or the game has started.', show_alert: true })
+                    await safeAnswerCallbackQuery(ctx, { text: '❌ You are not in the game or the game has started.', show_alert: true })
                     return
                 }
 
-                await ctx.answerCallbackQuery({ text: '🚪 You left the game.' })
+                await safeAnswerCallbackQuery(ctx, { text: '🚪 You left the game.' })
 
                 if (result.gameCancelled) {
                     await ctx.editMessageText(`🚫 **Game Cancelled** 🚫\n\nThe creator, ${userName}, left the game.`)
@@ -197,17 +198,17 @@ export function handleCallbackQuery(bot: Bot) {
 
             case 'start': {
                 if (!canStartGame(groupChatId, userId)) {
-                    await ctx.answerCallbackQuery({ text: '❌ Only the creator can start the game and you need at least 2 players.', show_alert: true })
+                    await safeAnswerCallbackQuery(ctx, { text: '❌ Only the creator can start the game and you need at least 2 players.', show_alert: true })
                     return
                 }
 
                 const success = startGameWithCards(groupChatId)
                 if (!success) {
-                    await ctx.answerCallbackQuery({ text: '❌ Failed to start game', show_alert: true })
+                    await safeAnswerCallbackQuery(ctx, { text: '❌ Failed to start game', show_alert: true })
                     return
                 }
 
-                await ctx.answerCallbackQuery('🎮 Game started!')
+                await safeAnswerCallbackQuery(ctx, '🎮 Game started!')
 
                 const game = getGame(groupChatId)
                 if (game) {

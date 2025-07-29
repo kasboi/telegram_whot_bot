@@ -4,6 +4,7 @@ import { handleCardPlay, handleDrawCard, handleSymbolSelection } from './handler
 import { handleAdminCommands } from './handlers/admin.ts'
 import { logger } from './utils/logger.ts'
 import { initPersistence } from './game/state.ts'
+import { notifyBotRestartWithContext } from './utils/restart-notification.ts'
 
 import "jsr:@std/dotenv/load"
 import { jsonLogger } from "./utils/logger.json.ts"
@@ -93,6 +94,10 @@ async function startBot() {
     logger.info('Starting Whot Game Bot...')
     logger.info('Bot is running and waiting for messages')
     jsonLogger.info('Starting Whot Game Bot...')
+    
+    // Notify active games that bot has restarted
+    await notifyBotRestartWithContext(bot)
+    
     bot.start()
   } catch (error) {
     logger.error('Failed to start bot', { error: error instanceof Error ? error.message : String(error) })

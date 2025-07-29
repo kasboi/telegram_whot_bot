@@ -5,6 +5,7 @@ import { type Card } from '../types/game.ts'
 import { logger } from '../utils/logger.ts'
 import { generateGroupStatusMessage } from './updates.ts'
 import { sendGameStats } from './stats.ts'
+import { safeAnswerCallbackQuery } from '../utils/callback.ts'
 
 
 // Send initial hand to player when game starts
@@ -177,26 +178,26 @@ export function handleCardPlay(bot: Bot) {
 
     const game = getGame(groupChatId)
     if (!game || game.state !== 'in_progress') {
-      await ctx.answerCallbackQuery('❌ Game not found or not in progress')
+      await safeAnswerCallbackQuery(ctx, '❌ Game not found or not in progress')
       return
     }
 
     const currentPlayer = getCurrentPlayer(groupChatId)
     if (!currentPlayer || currentPlayer.id !== userId) {
-      await ctx.answerCallbackQuery('❌ Not your turn!')
+      await safeAnswerCallbackQuery(ctx, '❌ Not your turn!')
       return
     }
 
     const player = game.players.find(p => p.id === userId)
     if (!player || !player.hand) {
-      await ctx.answerCallbackQuery('❌ Player not found')
+      await safeAnswerCallbackQuery(ctx, '❌ Player not found')
       return
     }
 
     // Find the card index in player's hand
     const cardIndex = player.hand.findIndex(c => c.id === cardId)
     if (cardIndex === -1) {
-      await ctx.answerCallbackQuery('❌ Card not found in your hand')
+      await safeAnswerCallbackQuery(ctx, '❌ Card not found in your hand')
       return
     }
 
@@ -204,13 +205,13 @@ export function handleCardPlay(bot: Bot) {
 
     const topCard = getTopCard(groupChatId)
     if (!topCard) {
-      await ctx.answerCallbackQuery('❌ No top card found')
+      await safeAnswerCallbackQuery(ctx, '❌ No top card found')
       return
     }
 
     const validCards = getValidCards(player.hand, topCard, game.chosenSymbol)
     if (!validCards.some(c => c.id === cardId)) {
-      await ctx.answerCallbackQuery('❌ Invalid play - card doesn\'t match top card')
+      await safeAnswerCallbackQuery(ctx, '❌ Invalid play - card doesn\'t match top card')
       return
     }
 
@@ -218,18 +219,18 @@ export function handleCardPlay(bot: Bot) {
     const result = playCard(groupChatId, userId, cardIndex)
 
     if (!result.success) {
-      await ctx.answerCallbackQuery(`❌ ${result.message}`)
+      await safeAnswerCallbackQuery(ctx, `❌ ${result.message}`)
       return
     }
 
     // Check if Whot card was played and needs symbol selection
     if (result.requiresSymbolChoice) {
-      await ctx.answerCallbackQuery(`🃏 Whot played! Choose a symbol`)
+      await safeAnswerCallbackQuery(ctx, `🃏 Whot played! Choose a symbol`)
       await showSymbolSelection(bot, userId, groupChatId)
       return
     }
 
-    await ctx.answerCallbackQuery(`🎉 Played ${formatCard(cardToPlay)}!`)
+    await safeAnswerCallbackQuery(ctx, `🎉 Played ${formatCard(cardToPlay)}!`)
 
     // Check if deck was reshuffled during card play (e.g., General Market)
     if (result.reshuffled) {
@@ -283,13 +284,13 @@ export function handleDrawCard(bot: Bot) {
 
     const game = getGame(groupChatId)
     if (!game || (game.state !== 'in_progress' && game.state !== 'ended')) {
-      await ctx.answerCallbackQuery('❌ Game not found or not in progress')
+      await safeAnswerCallbackQuery(ctx, '❌ Game not found or not in progress')
       return
     }
 
     const currentPlayer = getCurrentPlayer(groupChatId)
     if (!currentPlayer || currentPlayer.id !== userId) {
-      await ctx.answerCallbackQuery('❌ Not your turn!')
+      await safeAnswerCallbackQuery(ctx, '❌ Not your turn!')
       return
     }
 
@@ -297,7 +298,7 @@ export function handleDrawCard(bot: Bot) {
     const result = drawCard(groupChatId, userId)
 
     if (!result.success) {
-      await ctx.answerCallbackQuery(`❌ ${result.message}`)
+      await safeAnswerCallbackQuery(ctx, `❌ ${result.message}`)
       return
     }
 
@@ -315,7 +316,7 @@ export function handleDrawCard(bot: Bot) {
       tenderMessage += `\n🏆 The winner is **${winner.firstName}**!`
 
       await bot.api.sendMessage(groupChatId, tenderMessage, { parse_mode: 'Markdown' })
-      await ctx.answerCallbackQuery('The game has ended!')
+      await safeAnswerCallbackQuery(ctx, 'The game has ended!')
       await sendGameStats(bot, game)
       return
     }
@@ -330,10 +331,10 @@ export function handleDrawCard(bot: Bot) {
     const wasPenalty = result.message.includes('due to pending effect')
     if (wasPenalty) {
       const cardCount = result.message.match(/(\d+)/)?.[1] || '?'
-      await ctx.answerCallbackQuery(`📥 Drew ${cardCount} cards (penalty)`)
+      await safeAnswerCallbackQuery(ctx, `📥 Drew ${cardCount} cards (penalty)`)
       if (game) game.lastActionMessage = `📥 **${userName}** drew ${cardCount} cards due to special effect`
     } else {
-      await ctx.answerCallbackQuery('🎴 Drew a card!')
+      await safeAnswerCallbackQuery(ctx, '🎴 Drew a card!')
       if (game) game.lastActionMessage = `🎴 **${userName}** drew a card`
     }
 
@@ -397,11 +398,11 @@ export function handleSymbolSelection(bot: Bot) {
     const result = selectWhotSymbol(groupChatId, userId, selectedSymbol)
 
     if (!result.success) {
-      await ctx.answerCallbackQuery(`❌ ${result.message}`)
+      await safeAnswerCallbackQuery(ctx, `❌ ${result.message}`)
       return
     }
 
-    await ctx.answerCallbackQuery(`🎯 Symbol ${selectedSymbol} selected!`)
+    await safeAnswerCallbackQuery(ctx, `🎯 Symbol ${selectedSymbol} selected!`)
 
     // Store symbol selection action BEFORE updating hands
     const symbolEmojis: Record<string, string> = {

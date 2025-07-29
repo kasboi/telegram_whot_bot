@@ -7,6 +7,13 @@ import { PersistenceManager } from '../persistence/mod.ts'
 // Global game state storage (in-memory for MVP)
 export const gameState = new Map<number, GameSession>()
 
+/**
+ * Get access to the memory store for utility functions
+ */
+export function getMemoryStore(): Map<number, GameSession> {
+  return gameState
+}
+
 // Persistence manager for gradual migration
 let persistenceManager: PersistenceManager | null = null
 
@@ -617,6 +624,11 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
     pendingEffect: game.pendingEffect ? `${game.pendingEffect.type}: ${game.pendingEffect.amount}` : 'None'
   })
 
+  // Persist the updated game state (including pending effects)
+  saveGameToPersistence(game).catch(error => {
+    logger.warn('Failed to persist card play state', { groupChatId, error })
+  })
+
   const cardDescription = cardToPlay.number === 20 ? 'Whot' : `${cardToPlay.symbol} ${cardToPlay.number}`
   return { success: true, message: `Played ${cardDescription}`, reshuffled: reshuffledDuringPlay }
 }
@@ -689,6 +701,11 @@ export function drawCard(groupChatId: number, userId: number): {
 
     logger.info('Penalty cards drawn', { groupChatId, player: player.firstName, cardsDrawn: drawResult.cardsDrawn, newHandSize: player.hand!.length })
 
+    // Persist the state after clearing pending effect (CRITICAL for turn consistency)
+    saveGameToPersistence(game).catch(error => {
+      logger.warn('Failed to persist penalty resolution state', { groupChatId, error })
+    })
+
     return {
       success: true,
       message: drawResult.cardsDrawn > 0 ? `Drew ${drawResult.cardsDrawn} cards due to penalty effect` : 'No cards available to draw',
@@ -720,6 +737,11 @@ export function drawCard(groupChatId: number, userId: number): {
   game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
 
   logger.info('Card drawn', { groupChatId, player: player.firstName, newHandSize: player.hand!.length })
+
+  // Persist the updated game state
+  saveGameToPersistence(game).catch(error => {
+    logger.warn('Failed to persist card draw state', { groupChatId, error })
+  })
 
   return {
     success: true,
@@ -766,6 +788,11 @@ export function selectWhotSymbol(groupChatId: number, userId: number, selectedSy
       selectedSymbol,
       nextPlayer: nextPlayer.firstName,
       chosenSymbolActive: true
+    })
+
+    // Persist the symbol selection and turn change
+    saveGameToPersistence(game).catch(error => {
+      logger.warn('Failed to persist symbol selection state', { groupChatId, error })
     })
 
     return { success: true, message: `Symbol ${selectedSymbol} selected` }
