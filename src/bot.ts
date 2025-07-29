@@ -1,10 +1,12 @@
 import { Bot } from 'https://deno.land/x/grammy@v1.37.0/mod.ts'
 import { handleStartGame, handleCallbackQuery, handleMyCards, handleHelp, handleHowToPlay } from './handlers/commands.ts'
 import { handleCardPlay, handleDrawCard, handleSymbolSelection } from './handlers/private.ts'
+import { handleAdminCommands } from './handlers/admin.ts'
 import { logger } from './utils/logger.ts'
+import { initPersistence } from './game/state.ts'
 
 import "jsr:@std/dotenv/load"
-import { jsonLogger } from "./utils/logger.json.ts";
+import { jsonLogger } from "./utils/logger.json.ts"
 
 // Get bot token from environment
 const botToken = Deno.env.get('TELEGRAM_BOT_TOKEN')
@@ -34,6 +36,9 @@ handleCallbackQuery(bot)
 handleMyCards(bot)
 handleHelp(bot)
 handleHowToPlay(bot)
+
+// Register admin commands
+handleAdminCommands(bot)
 
 // Register private chat handlers
 handleCardPlay(bot)
@@ -73,6 +78,7 @@ async function setupBotCommands() {
     { command: 'mycards', description: 'Get your cards in private message' },
     { command: 'help', description: 'Show help information' },
     { command: 'howtoplay', description: 'Learn how to play Whot' },
+    // Admin commands are not shown in public menu for security
   ])
   logger.info('Bot commands registered successfully')
 }
@@ -80,6 +86,9 @@ async function setupBotCommands() {
 // Start the bot
 async function startBot() {
   try {
+    // Initialize persistence layer first
+    await initPersistence()
+
     await setupBotCommands()
     logger.info('Starting Whot Game Bot...')
     logger.info('Bot is running and waiting for messages')

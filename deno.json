@@ -17,10 +17,10 @@
     "proseWrap": "preserve"
   },
   "tasks": {
-    "start": "deno run --allow-env=TELEGRAM_BOT_TOKEN --allow-net=api.telegram.org --allow-read=.env src/bot.ts",
-    "dev": "deno run --watch --allow-env=TELEGRAM_BOT_TOKEN --allow-net=api.telegram.org --allow-read=.env src/bot.ts",
-    "check": "deno check --allow-import **/*.ts",
+    "start": "deno run --unstable-kv --allow-env=TELEGRAM_BOT_TOKEN --allow-net=api.telegram.org --allow-read=.env --allow-write=./data src/bot.ts",
+    "dev": "deno run --unstable-kv --watch --allow-all src/bot.ts",
+    "check": "deno check --unstable-kv --allow-import **/*.ts",
     "lint": "deno lint",
-    "test": "deno test --allow-all"
+    "test": "deno test --unstable-kv --allow-all"
   }
 }

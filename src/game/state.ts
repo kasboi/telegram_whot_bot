@@ -2,9 +2,74 @@ import { GameSession, Player, Card } from '../types/game.ts'
 import { logger } from '../utils/logger.ts'
 import { createDeck, dealCards, canPlayCardWithChosen, shuffleDeck } from './cards.ts'
 import { getCardEffect, canPlayDuringEffect } from './special.ts'
+import { PersistenceManager } from '../persistence/mod.ts'
 
 // Global game state storage (in-memory for MVP)
 export const gameState = new Map<number, GameSession>()
+
+// Persistence manager for gradual migration
+let persistenceManager: PersistenceManager | null = null
+
+/**
+ * Initialize persistence with dual-write mode (KV + existing memory)
+ * Also recovers any existing games from KV storage
+ */
+export async function initPersistence(): Promise<void> {
+  try {
+    persistenceManager = new PersistenceManager(gameState)
+    await persistenceManager.init()
+
+    // Recover any existing games from KV storage
+    const recoveryResult = await persistenceManager.recoverGamesFromKV()
+    if (recoveryResult.recovered > 0) {
+      logger.info('Successfully recovered games from persistence', {
+        recovered: recoveryResult.recovered,
+        failed: recoveryResult.failed,
+        totalInMemory: gameState.size
+      })
+    } else if (recoveryResult.failed > 0) {
+      logger.warn('Some games failed to recover from persistence', {
+        failed: recoveryResult.failed
+      })
+    } else {
+      logger.info('No games found in persistence to recover')
+    }
+
+    logger.info('Persistence manager initialized in dual-write mode', {
+      mode: persistenceManager.getMode(),
+      gamesInMemory: gameState.size
+    })
+  } catch (error) {
+    logger.error('Failed to initialize persistence manager', {
+      error: error instanceof Error ? error.message : String(error)
+    })
+    // Continue without persistence for now
+  }
+}
+
+/**
+ * Get the persistence manager instance for admin operations
+ */
+export function getPersistenceManager(): PersistenceManager | null {
+  return persistenceManager
+}
+
+/**
+ * Save game to persistence layer (non-blocking)
+ */
+async function saveGameToPersistence(game: GameSession): Promise<void> {
+  if (!persistenceManager) return
+
+  try {
+    await persistenceManager.saveGame(game)
+  } catch (error) {
+    logger.warn('Failed to persist game state', {
+      groupChatId: game.id,
+      error: error instanceof Error ? error.message : String(error)
+    })
+    // Don't throw - game continues in memory
+  }
+}
 
 /**
  * Calculates the point value of a player's hand for Tender mode.
@@ -32,6 +97,12 @@ export function createGame(groupChatId: number, creatorId: number, creatorName: 
   }
 
   gameState.set(groupChatId, newGame)
+
+  // Persist to KV store (non-blocking)
+  saveGameToPersistence(newGame).catch(error => {
+    logger.warn('Failed to persist new game', { groupChatId, error })
+  })
+
   logger.info('Game created', {
     groupChatId,
     creatorId,
@@ -73,13 +144,6 @@ export function addPlayer(groupChatId: number, userId: number, firstName: string
   }
 
   game.players.push(newPlayer)
-  logger.info('Player joined game', {
-    groupChatId,
-    userId,
-    firstName,
-    totalPlayers: game.players.length,
-    playersList: game.players.map(p => p.firstName)
-  })
 
   // Game ready to start if we have 2+ players
   if (game.players.length >= 2) {
@@ -90,6 +154,19 @@ export function addPlayer(groupChatId: number, userId: number, firstName: string
       players: game.players.map(p => p.firstName)
     })
   }
+
+  // Persist updated game state
+  saveGameToPersistence(game).catch(error => {
+    logger.warn('Failed to persist player addition', { groupChatId, userId, error })
+  })
+
+  logger.info('Player joined game', {
+    groupChatId,
+    userId,
+    firstName,
+    totalPlayers: game.players.length,
+    playersList: game.players.map(p => p.firstName)
+  })
 
   return true
 }

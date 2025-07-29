@@ -55,9 +55,41 @@ export function handleStartGame(bot: Bot) {
 
         // Check if game already exists
         const existingGame = getGame(groupChatId)
-        if (existingGame && existingGame.state !== 'idle' && existingGame.state !== 'ended') {
-            await ctx.reply('🎮 A game is already in progress in this group!')
-            return
+        if (existingGame) {
+            if (existingGame.state === 'in_progress') {
+                await ctx.reply('🎮 A game is already in progress in this group!')
+                return
+            } else if (existingGame.state === 'ready_to_start' || existingGame.state === 'waiting_for_players') {
+                // Allow rejoining or restarting stale lobbies
+                await ctx.reply('🔄 Rejoining existing game lobby...')
+                
+                // Update lobby message
+                const keyboard = new InlineKeyboard()
+                    .text('🃏 Join Game', `join_${groupChatId}`)
+                    .text('🚪 Leave Game', `leave_${groupChatId}`)
+
+                let messageText = `🎴 **Whot Game** 🎴\n\n` +
+                    `� Created by: ${existingGame.players.find(p => p.id === existingGame.creatorId)?.firstName || 'Creator'}\n` +
+                    `👥 Players (${existingGame.players.length}):\n`
+
+                existingGame.players.forEach((player, index) => {
+                    messageText += `${index + 1}. ${player.firstName}\n`
+                })
+
+                if (existingGame.state === 'ready_to_start') {
+                    messageText += `\n✅ Ready to start! (Creator can tap "Start Game")`
+                    keyboard.row().text('🚀 Start Game', `start_${groupChatId}`)
+                } else {
+                    messageText += `\n⏳ Need at least ${2 - existingGame.players.length} more player(s) to start.`
+                }
+
+                await ctx.reply(messageText, {
+                    reply_markup: keyboard,
+                    parse_mode: 'Markdown'
+                })
+                return
+            }
+            // For 'ended' games, allow creating new game (will fall through)
         }
 
         // Create new game
