@@ -5,6 +5,7 @@ import { handleAdminCommands } from './handlers/admin.ts'
 import { logger } from './utils/logger.ts'
 import { initPersistence } from './game/state.ts'
 import { notifyBotRestartWithContext } from './utils/restart-notification.ts'
+import { initTimeoutManager } from './game/timeouts.ts'
 
 import "jsr:@std/dotenv/load"
 import { jsonLogger } from "./utils/logger.json.ts"
@@ -89,6 +90,9 @@ async function startBot() {
   try {
     // Initialize persistence layer first
     await initPersistence()
+
+    // Initialize timeout manager
+    initTimeoutManager(bot)
 
     await setupBotCommands()
     logger.info('Starting Whot Game Bot...')

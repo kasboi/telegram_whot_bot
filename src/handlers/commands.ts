@@ -4,6 +4,7 @@ import { logger } from '../utils/logger.ts'
 import { sendPlayerHand } from './private.ts'
 import { generateGroupStatusMessage } from "./updates.ts"
 import { safeAnswerCallbackQuery } from '../utils/callback.ts'
+import { getTimeoutManager } from '../game/timeouts.ts'
 
 async function updateLobbyMessage(ctx: Context, groupChatId: number) {
     const game = getGame(groupChatId)
@@ -123,6 +124,10 @@ export function handleStartGame(bot: Bot) {
         // Automatically add the creator to the game
         addPlayer(groupChatId, creatorId, creatorName)
 
+        // Start lobby timeout (90 seconds)
+        const timeoutManager = getTimeoutManager()
+        timeoutManager.startLobbyTimeout(groupChatId)
+
         // Create join and leave buttons
         const keyboard = new InlineKeyboard()
             .text('🃏 Join Game', `join_${groupChatId}`)
@@ -132,7 +137,8 @@ export function handleStartGame(bot: Bot) {
             `🎴 **Whot Game Started!** 🎴\n\n` +
             `🎯 Game created by ${creatorName}\n` +
             `👥 Players: ${creatorName} (1)\n` +
-            `⏳ Need at least 1 more player to start\n\n` +
+            `⏳ Need at least 1 more player to start\n` +
+            `⏰ **Auto-start in 90 seconds** (or auto-cancel if < 2 players)\n\n` +
             `Click a button below to join or leave:`,
             {
                 reply_markup: keyboard,
@@ -189,6 +195,10 @@ export function handleCallbackQuery(bot: Bot) {
                 await safeAnswerCallbackQuery(ctx, { text: '🚪 You left the game.' })
 
                 if (result.gameCancelled) {
+                    // Cancel all timers when game is cancelled
+                    const timeoutManager = getTimeoutManager()
+                    timeoutManager.cancelAllTimers(groupChatId)
+
                     await ctx.editMessageText(`🚫 **Game Cancelled** 🚫\n\nThe creator, ${userName}, left the game.`)
                 } else {
                     await updateLobbyMessage(ctx, groupChatId)
@@ -201,6 +211,10 @@ export function handleCallbackQuery(bot: Bot) {
                     await safeAnswerCallbackQuery(ctx, { text: '❌ Only the creator can start the game and you need at least 2 players.', show_alert: true })
                     return
                 }
+
+                // Cancel lobby timeout since game is being started manually
+                const timeoutManager = getTimeoutManager()
+                timeoutManager.cancelAllTimers(groupChatId)
 
                 const success = startGameWithCards(groupChatId)
                 if (!success) {
@@ -219,6 +233,10 @@ export function handleCallbackQuery(bot: Bot) {
                     for (const player of game.players) {
                         await sendPlayerHand(bot, groupChatId, player.id, player.firstName)
                     }
+
+                    // Start turn timeout for first player
+                    const currentPlayer = game.players[game.currentPlayerIndex!]
+                    timeoutManager.startTurnTimeout(groupChatId, currentPlayer.id)
                 }
                 break
             }

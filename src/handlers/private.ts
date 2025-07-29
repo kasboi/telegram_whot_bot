@@ -6,6 +6,7 @@ import { logger } from '../utils/logger.ts'
 import { generateGroupStatusMessage } from './updates.ts'
 import { sendGameStats } from './stats.ts'
 import { safeAnswerCallbackQuery } from '../utils/callback.ts'
+import { getTimeoutManager } from '../game/timeouts.ts'
 
 
 // Send initial hand to player when game starts
@@ -226,11 +227,21 @@ export function handleCardPlay(bot: Bot) {
     // Check if Whot card was played and needs symbol selection
     if (result.requiresSymbolChoice) {
       await safeAnswerCallbackQuery(ctx, `🃏 Whot played! Choose a symbol`)
+
+      // Cancel current turn timeout and start Whot selection timeout
+      const timeoutManager = getTimeoutManager()
+      timeoutManager.cancelTimer(`turn_${groupChatId}_${userId}`)
+      timeoutManager.startWhotTimeout(groupChatId, userId)
+
       await showSymbolSelection(bot, userId, groupChatId)
       return
     }
 
     await safeAnswerCallbackQuery(ctx, `🎉 Played ${formatCard(cardToPlay)}!`)
+
+    // Cancel current player's turn timeout
+    const timeoutManager = getTimeoutManager()
+    timeoutManager.cancelTimer(`turn_${groupChatId}_${userId}`)
 
     // Check if deck was reshuffled during card play (e.g., General Market)
     if (result.reshuffled) {
@@ -256,6 +267,18 @@ export function handleCardPlay(bot: Bot) {
 
     // Update all players' hands to reflect turn change (now with correct action message)
     await updateAllPlayerHands(bot, groupChatId)
+
+    // Start timeout for next player if game is still in progress
+    const gameAfterUpdate = getGame(groupChatId)
+    if (gameAfterUpdate && gameAfterUpdate.state === 'in_progress' && !result.gameEnded) {
+      const timeoutManager = getTimeoutManager()
+
+      // Cancel any existing timeouts for this game first
+      timeoutManager.cancelAllTimers(groupChatId)
+
+      const nextPlayer = gameAfterUpdate.players[gameAfterUpdate.currentPlayerIndex!]
+      timeoutManager.startTurnTimeout(groupChatId, nextPlayer.id)
+    }
 
     // Announce play in group chat
     try {
@@ -338,8 +361,19 @@ export function handleDrawCard(bot: Bot) {
       if (game) game.lastActionMessage = `🎴 **${userName}** drew a card`
     }
 
+    // Cancel current player's turn timeout
+    const timeoutManager = getTimeoutManager()
+    timeoutManager.cancelTimer(`turn_${groupChatId}_${userId}`)
+
     // Update all players' hands and announce the new game state
     await updateAllPlayerHands(bot, groupChatId)
+
+    // Start timeout for next player if game is still in progress
+    const gameAfterDraw = getGame(groupChatId)
+    if (gameAfterDraw && gameAfterDraw.state === 'in_progress') {
+      const nextPlayer = gameAfterDraw.players[gameAfterDraw.currentPlayerIndex!]
+      timeoutManager.startTurnTimeout(groupChatId, nextPlayer.id)
+    }
     try {
       const gameForGroup = getGame(groupChatId)
       if (gameForGroup) {
@@ -404,6 +438,10 @@ export function handleSymbolSelection(bot: Bot) {
 
     await safeAnswerCallbackQuery(ctx, `🎯 Symbol ${selectedSymbol} selected!`)
 
+    // Cancel Whot selection timeout
+    const timeoutManager = getTimeoutManager()
+    timeoutManager.cancelTimer(`whot_${groupChatId}_${userId}`)
+
     // Store symbol selection action BEFORE updating hands
     const symbolEmojis: Record<string, string> = {
       circle: '⚪',
@@ -421,6 +459,13 @@ export function handleSymbolSelection(bot: Bot) {
 
     // Update all players' hands to reflect turn change (now with correct action message)
     await updateAllPlayerHands(bot, groupChatId)
+
+    // Start timeout for next player
+    const gameAfterSymbol = getGame(groupChatId)
+    if (gameAfterSymbol && gameAfterSymbol.state === 'in_progress') {
+      const nextPlayer = gameAfterSymbol.players[gameAfterSymbol.currentPlayerIndex!]
+      timeoutManager.startTurnTimeout(groupChatId, nextPlayer.id)
+    }
 
     // Announce symbol selection in group chat
     try {
