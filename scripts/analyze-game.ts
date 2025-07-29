@@ -12,14 +12,14 @@ if (result.value) {
   console.log(`State: ${game.state}`)
   console.log(`Created: ${new Date(game.createdAt)}`)
   console.log(`Players: ${game.players.length}`)
-  
+
   game.players.forEach((player: any, i: number) => {
-    console.log(`  ${i+1}. ${player.firstName} (${player.id}) - State: ${player.state}`)
+    console.log(`  ${i + 1}. ${player.firstName} (${player.id}) - State: ${player.state}`)
     if (player.hand) {
       console.log(`     Hand: ${player.hand.length} cards`)
     }
   })
-  
+
   console.log(`Current Player Index: ${game.currentPlayerIndex}`)
   console.log(`Has Deck: ${!!game.deck} (${game.deck?.length || 0} cards)`)
   console.log(`Has Discard Pile: ${!!game.discardPile} (${game.discardPile?.length || 0} cards)`)

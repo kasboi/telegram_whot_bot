@@ -21,9 +21,9 @@ export async function safeAnswerCallbackQuery(
     return true
   } catch (error) {
     // Check if it's an expired query error
-    if (error instanceof Error && 
-        (error.message.includes('query is too old') || 
-         error.message.includes('query ID is invalid'))) {
+    if (error instanceof Error &&
+      (error.message.includes('query is too old') ||
+        error.message.includes('query ID is invalid'))) {
       logger.debug('Callback query expired - ignoring', {
         userId: ctx.from?.id,
         userName: ctx.from?.first_name,
@@ -31,7 +31,7 @@ export async function safeAnswerCallbackQuery(
       })
       return false
     }
-    
+
     // For other errors, still log but don't throw
     logger.warn('Failed to answer callback query', {
       userId: ctx.from?.id,

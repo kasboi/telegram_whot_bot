@@ -15,7 +15,7 @@ async function testStartGamePersistence() {
     // Create memory store and persistence manager
     const memoryStore = new Map<number, GameSession>()
     const manager = new PersistenceManager(memoryStore)
-    
+
     console.log('1. Initializing persistence manager...')
     await manager.init()
     console.log('   ✅ Persistence manager initialized')
@@ -65,14 +65,14 @@ async function testStartGamePersistence() {
     ]
     testGame.lastPlayedCard = testGame.discardPile[0]
     testGame.playedCards = [...testGame.discardPile]
-    
+
     // Give players hands
     testGame.players[0].hand = [
       { id: 'hand1', symbol: 'star', number: 2, isSpecial: false },
       { id: 'hand2', symbol: 'square', number: 7, isSpecial: false }
     ]
     testGame.players[0].state = 'active'
-    
+
     testGame.players[1].hand = [
       { id: 'hand3', symbol: 'circle', number: 4, isSpecial: false },
       { id: 'hand4', symbol: 'triangle', number: 1, isSpecial: true }
@@ -94,7 +94,7 @@ async function testStartGamePersistence() {
       console.log(`   🃏 Has deck: ${!!loadedGame.deck} (${loadedGame.deck?.length || 0} cards)`)
       console.log(`   🃏 Has discard: ${!!loadedGame.discardPile} (${loadedGame.discardPile?.length || 0} cards)`)
       console.log(`   🎯 Last played: ${loadedGame.lastPlayedCard ? `${loadedGame.lastPlayedCard.symbol} ${loadedGame.lastPlayedCard.number}` : 'None'}`)
-      
+
       if (loadedGame.state === 'in_progress' && loadedGame.deck && loadedGame.deck.length > 0) {
         console.log('\n🎉 Persistence test PASSED! in_progress state with cards persisted correctly.')
       } else {

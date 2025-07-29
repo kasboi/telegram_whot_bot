@@ -67,7 +67,7 @@ export function handleStartGame(bot: Bot) {
                     const success = startGameWithCards(groupChatId)
                     if (success) {
                         await ctx.reply('🎮 **Game Started!** 🎮\n\nCards have been dealt! Check your private messages for your hand.')
-                        
+
                         const game = getGame(groupChatId)
                         if (game) {
                             const messageText = generateGroupStatusMessage(game)
@@ -84,10 +84,10 @@ export function handleStartGame(bot: Bot) {
                         return
                     }
                 }
-                
+
                 // Not creator or game not ready - show lobby
                 await ctx.reply('🔄 Rejoining existing game lobby...')
-                
+
                 // Update lobby message
                 const keyboard = new InlineKeyboard()
                     .text('🃏 Join Game', `join_${groupChatId}`)

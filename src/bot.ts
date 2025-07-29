@@ -94,10 +94,10 @@ async function startBot() {
     logger.info('Starting Whot Game Bot...')
     logger.info('Bot is running and waiting for messages')
     jsonLogger.info('Starting Whot Game Bot...')
-    
+
     // Notify active games that bot has restarted
     await notifyBotRestartWithContext(bot)
-    
+
     bot.start()
   } catch (error) {
     logger.error('Failed to start bot', { error: error instanceof Error ? error.message : String(error) })

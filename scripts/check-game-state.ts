@@ -15,7 +15,7 @@ async function checkCurrentGameState() {
     // Create memory store and persistence manager
     const memoryStore = new Map<number, GameSession>()
     const manager = new PersistenceManager(memoryStore)
-    
+
     console.log('1. Initializing persistence manager...')
     await manager.init()
 
@@ -24,7 +24,7 @@ async function checkCurrentGameState() {
 
     console.log(`2. Loading game ${gameId}...`)
     const game = await manager.loadGame(gameId)
-    
+
     if (!game) {
       console.log('   ❌ Game not found')
       return
@@ -34,7 +34,7 @@ async function checkCurrentGameState() {
     console.log(`   State: ${game.state}`)
     console.log(`   Players: ${game.players.length}`)
     console.log(`   Current player: ${game.players[game.currentPlayerIndex].firstName} (index: ${game.currentPlayerIndex})`)
-    
+
     if (game.pendingEffect) {
       console.log(`   🎲 Pending effect: ${game.pendingEffect.type} - ${game.pendingEffect.amount} cards`)
       console.log(`   🎯 Target: ${game.players[game.pendingEffect.targetPlayerIndex].firstName} (index: ${game.pendingEffect.targetPlayerIndex})`)

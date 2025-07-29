@@ -136,7 +136,7 @@ export function handleAdminCommands(bot: Bot) {
       // Import the start function
       const { startGameWithCards } = await import('../game/state.ts')
       const success = startGameWithCards(groupChatId)
-      
+
       if (success) {
         await ctx.reply(`✅ Force started game ${groupChatId}\n\nState: ${game.state} → in_progress`)
       } else {
@@ -200,7 +200,7 @@ export function handleAdminCommands(bot: Bot) {
 
       const gameInfo = `${game.state} (${game.players.length} players)`
       clearGame(groupChatId)
-      
+
       await ctx.reply(`✅ Forcefully cleaned game ${groupChatId}: ${gameInfo}`)
 
       logger.info('Admin force cleaned game', {
@@ -234,7 +234,7 @@ export function handleAdminCommands(bot: Bot) {
         // Clean up games that are stale (old and not in progress)
         const isStale = game.createdAt.getTime() < staleCutoff
         const isNotActive = game.state === 'waiting_for_players' || game.state === 'ready_to_start'
-        
+
         if (isStale && isNotActive) {
           clearGame(groupChatId)
           cleaned++
@@ -242,7 +242,7 @@ export function handleAdminCommands(bot: Bot) {
         }
       }
 
-      const message = cleaned > 0 
+      const message = cleaned > 0
         ? `✅ Cleaned up ${cleaned} stale game(s)`
         : `📭 No stale games found to clean`
 

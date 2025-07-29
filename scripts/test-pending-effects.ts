@@ -16,7 +16,7 @@ async function testPendingEffectsPersistence() {
     // Create memory store and persistence manager
     const memoryStore = new Map<number, GameSession>()
     const manager = new PersistenceManager(memoryStore)
-    
+
     console.log('1. Initializing persistence manager...')
     await manager.init()
     console.log('   ✅ Persistence manager initialized')
@@ -107,7 +107,7 @@ async function testPendingEffectsPersistence() {
     )
     testGame.pendingEffect = undefined // Clear the effect
     testGame.currentPlayerIndex = 0 // Turn advances to PlayerA
-    
+
     console.log(`   📥 PlayerB drew 3 cards (hand size: ${testGame.players[1].hand!.length})`)
     console.log(`   🔄 Turn advanced to: ${testGame.players[testGame.currentPlayerIndex].firstName}`)
 
@@ -121,15 +121,15 @@ async function testPendingEffectsPersistence() {
     if (loadedGame2) {
       const currentPlayer = loadedGame2.players[loadedGame2.currentPlayerIndex]
       const penalizedPlayer = loadedGame2.players[1]
-      
+
       console.log(`   🎮 Current player: ${currentPlayer.firstName} (index: ${loadedGame2.currentPlayerIndex})`)
       console.log(`   📥 PlayerB hand size: ${penalizedPlayer.hand!.length} cards`)
       console.log(`   🎲 Pending effect: ${loadedGame2.pendingEffect ? JSON.stringify(loadedGame2.pendingEffect) : 'None'}`)
-      
+
       const correctTurn = loadedGame2.currentPlayerIndex === 0
       const correctHandSize = penalizedPlayer.hand!.length === 6 // Original 3 + 3 penalty
       const noPendingEffect = !loadedGame2.pendingEffect
-      
+
       if (correctTurn && correctHandSize && noPendingEffect) {
         console.log('\n🎉 PENDING EFFECTS PERSISTENCE TEST PASSED!')
         console.log('   ✅ Penalty effect properly resolved and persisted')

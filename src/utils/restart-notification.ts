@@ -9,7 +9,7 @@ import { getMemoryStore } from '../game/state.ts'
 export async function notifyBotRestart(bot: Bot): Promise<void> {
   try {
     const memoryStore = getMemoryStore()
-    const activeGames = Array.from(memoryStore.values()).filter(game => 
+    const activeGames = Array.from(memoryStore.values()).filter(game =>
       game.state === 'in_progress' || game.state === 'waiting_for_players'
     )
 
@@ -22,20 +22,20 @@ export async function notifyBotRestart(bot: Bot): Promise<void> {
 
     const notificationPromises = activeGames.map(async (game) => {
       try {
-        const restartMessage = 
+        const restartMessage =
           '🔄 **Bot Restarted** 🔄\n\n' +
           '✅ Your game has been recovered and continues normally!\n' +
           '⚠️ If you clicked any buttons while the bot was down, please try again.\n\n' +
           `🎮 Current status: ${game.state === 'in_progress' ? 'Game in progress' : 'Waiting for players'}`
 
-        await bot.api.sendMessage(game.id, restartMessage, { 
+        await bot.api.sendMessage(game.id, restartMessage, {
           parse_mode: 'Markdown',
           disable_notification: true // Don't spam users with notifications
         })
 
-        logger.debug('Restart notification sent', { 
-          groupChatId: game.id, 
-          gameState: game.state 
+        logger.debug('Restart notification sent', {
+          groupChatId: game.id,
+          gameState: game.state
         })
       } catch (error) {
         logger.warn('Failed to send restart notification', {
@@ -61,7 +61,7 @@ export async function notifyBotRestart(bot: Bot): Promise<void> {
 export async function notifyBotRestartWithContext(bot: Bot): Promise<void> {
   try {
     const memoryStore = getMemoryStore()
-    const activeGames = Array.from(memoryStore.values()).filter(game => 
+    const activeGames = Array.from(memoryStore.values()).filter(game =>
       game.state === 'in_progress' || game.state === 'waiting_for_players'
     )
 
@@ -75,26 +75,26 @@ export async function notifyBotRestartWithContext(bot: Bot): Promise<void> {
     for (const game of activeGames) {
       try {
         let contextualMessage = '🔄 **Bot Restarted & Game Recovered** 🔄\n\n'
-        
+
         if (game.state === 'in_progress') {
           const currentPlayer = game.players[game.currentPlayerIndex!]
           contextualMessage += `🎮 **Game continues normally!**\n`
           contextualMessage += `👤 Current turn: **${currentPlayer.firstName}**\n`
-          
+
           if (game.pendingEffect) {
             const targetPlayer = game.players[game.pendingEffect.targetPlayerIndex!]
             contextualMessage += `⚠️ Pending effect: ${targetPlayer.firstName} must draw ${game.pendingEffect.amount} cards\n`
           }
-          
+
           contextualMessage += `🃏 Players: ${game.players.map(p => `${p.firstName} (${p.hand?.length || 0})`).join(', ')}\n\n`
         } else {
           contextualMessage += `🕐 **Waiting for players to join**\n`
           contextualMessage += `👥 Current players: ${game.players.map(p => p.firstName).join(', ')}\n\n`
         }
-        
+
         contextualMessage += '💡 **If you clicked buttons while bot was down, please try again.**'
 
-        await bot.api.sendMessage(game.id, contextualMessage, { 
+        await bot.api.sendMessage(game.id, contextualMessage, {
           parse_mode: 'Markdown',
           disable_notification: true
         })
@@ -102,8 +102,8 @@ export async function notifyBotRestartWithContext(bot: Bot): Promise<void> {
         // Small delay to avoid hitting rate limits
         await new Promise(resolve => setTimeout(resolve, 100))
 
-        logger.debug('Enhanced restart notification sent', { 
-          groupChatId: game.id, 
+        logger.debug('Enhanced restart notification sent', {
+          groupChatId: game.id,
           gameState: game.state,
           playerCount: game.players.length
         })

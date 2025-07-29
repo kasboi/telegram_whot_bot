@@ -65,12 +65,12 @@ export function getPersistenceManager(): PersistenceManager | null {
  * Save game to persistence layer (non-blocking)
  */
 async function saveGameToPersistence(game: GameSession): Promise<void> {
-  logger.debug('saveGameToPersistence called', { 
-    groupChatId: game.id, 
+  logger.debug('saveGameToPersistence called', {
+    groupChatId: game.id,
     state: game.state,
-    hasPersistenceManager: !!persistenceManager 
+    hasPersistenceManager: !!persistenceManager
   })
-  
+
   if (!persistenceManager) {
     logger.debug('No persistence manager available')
     return
@@ -78,9 +78,9 @@ async function saveGameToPersistence(game: GameSession): Promise<void> {
 
   try {
     await persistenceManager.saveGame(game)
-    logger.debug('Game saved to persistence successfully', { 
-      groupChatId: game.id, 
-      state: game.state 
+    logger.debug('Game saved to persistence successfully', {
+      groupChatId: game.id,
+      state: game.state
     })
   } catch (error) {
     logger.warn('Failed to persist game state', {
@@ -206,14 +206,14 @@ export function clearGame(groupChatId: number): boolean {
   }
 
   gameState.delete(groupChatId)
-  
+
   // Also delete from persistence
   if (persistenceManager) {
     persistenceManager.deleteGame(groupChatId).catch(error => {
       logger.warn('Failed to delete game from persistence', { groupChatId, error })
     })
   }
-  
+
   logger.info('Game cleared', { groupChatId, state: game.state, players: game.players.length })
   return true
 }
@@ -382,12 +382,12 @@ export function startGameWithCards(groupChatId: number): boolean {
   })
 
   // Persist the game state with cards to KV storage
-  logger.debug('Attempting to persist game start', { 
-    groupChatId, 
+  logger.debug('Attempting to persist game start', {
+    groupChatId,
     hasPersistenceManager: !!persistenceManager,
-    gameState: game.state 
+    gameState: game.state
   })
-  
+
   saveGameToPersistence(game).catch(error => {
     logger.warn('Failed to persist game start', { groupChatId, error })
   })
