@@ -17,7 +17,10 @@
     "proseWrap": "preserve"
   },
   "tasks": {
-    "start": "deno run --allow-all src/bot.ts",
-    "check": "deno check --allow-import src/bot.ts"
+    "start": "deno run --allow-env=TELEGRAM_BOT_TOKEN --allow-net=api.telegram.org --allow-read=.env src/bot.ts",
+    "dev": "deno run --watch --allow-env=TELEGRAM_BOT_TOKEN --allow-net=api.telegram.org --allow-read=.env src/bot.ts",
+    "check": "deno check --allow-import **/*.ts",
+    "lint": "deno lint",
+    "test": "deno test --allow-all"
   }
 }

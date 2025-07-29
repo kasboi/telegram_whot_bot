@@ -1,5 +1,5 @@
 import { Bot } from 'https://deno.land/x/grammy@v1.37.0/mod.ts'
-import { GameSession, Player } from '../types/game.ts'
+import { GameSession } from '../types/game.ts'
 import { logger } from '../utils/logger.ts'
 
 /**
