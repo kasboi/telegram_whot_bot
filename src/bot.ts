@@ -1,9 +1,10 @@
 import { Bot } from 'https://deno.land/x/grammy@v1.37.0/mod.ts'
-import { handleStartGame, handleCallbackQuery, handleMyCards } from './handlers/commands.ts'
+import { handleStartGame, handleCallbackQuery, handleMyCards, handleHelp, handleHowToPlay } from './handlers/commands.ts'
 import { handleCardPlay, handleDrawCard, handleSymbolSelection } from './handlers/private.ts'
 import { logger } from './utils/logger.ts'
 
 import "jsr:@std/dotenv/load"
+import { jsonLogger } from "./utils/logger.json.ts";
 
 // Get bot token from environment
 const botToken = Deno.env.get('TELEGRAM_BOT_TOKEN')
@@ -31,6 +32,8 @@ bot.on('callback_query', async (ctx, next) => {
 handleStartGame(bot)
 handleCallbackQuery(bot)
 handleMyCards(bot)
+handleHelp(bot)
+handleHowToPlay(bot)
 
 // Register private chat handlers
 handleCardPlay(bot)
@@ -68,6 +71,8 @@ async function setupBotCommands() {
     { command: 'start', description: 'Welcome message and bot info' },
     { command: 'startgame', description: 'Start a new Whot game (group chats only)' },
     { command: 'mycards', description: 'Get your cards in private message' },
+    { command: 'help', description: 'Show help information' },
+    { command: 'howtoplay', description: 'Learn how to play Whot' },
   ])
   logger.info('Bot commands registered successfully')
 }
@@ -78,6 +83,7 @@ async function startBot() {
     await setupBotCommands()
     logger.info('Starting Whot Game Bot...')
     logger.info('Bot is running and waiting for messages')
+    jsonLogger.info('Starting Whot Game Bot...')
     bot.start()
   } catch (error) {
     logger.error('Failed to start bot', { error: error instanceof Error ? error.message : String(error) })

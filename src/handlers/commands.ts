@@ -211,3 +211,60 @@ export function handleMyCards(bot: Bot) {
         }
     })
 }
+
+export function handleHelp(bot: Bot) {
+    bot.command('help', async (ctx: Context) => {
+        const helpMessage = `
+🎴 **Welcome to Whot Game Bot!** 🎴
+
+Here are the available commands:
+- **/startgame**: Start a new game in a group chat.
+- **/mycards**: Get your current hand of cards in a private message.
+- **/help**: Show this help message.
+
+**How to Play:**
+1. Add the bot to a group.
+2. Use **/startgame** to create a lobby.
+3. Players join using the buttons.
+4. The creator starts the game.
+5. Play your cards via private message with the bot!
+`
+        await ctx.reply(helpMessage, { parse_mode: 'Markdown' })
+    })
+}
+
+export function handleHowToPlay(bot: Bot) {
+    bot.command('howtoplay', async (ctx: Context) => {
+        const rulesMsg = `
+🃏 **HOW TO PLAY WHOT** 🃏
+
+*THE GOAL*
+The goal is simple: be the first player to get rid of all the cards in your hand!
+
+*GETTING STARTED*
+1. Add the bot to a group chat.
+2. Use **/startgame** to create a new game lobby.
+3. Other players click the "Join Game" button.
+4. Once you have at least 2 players, the creator can start the game.
+
+*GAMEPLAY*
+- You will receive your hand of cards in a private message from me.
+- When it's your turn, you must play a card that matches the **symbol** (🔴🔺❌🟦⭐) or the **number** of the card on top of the discard pile.
+- If you can't play any of your cards, you must click the "Draw Card" button to take a card from the deck.
+- The game continues until one player has no cards left.
+
+*SPECIAL CARDS*
+Watch out for these special cards! They can change the game in an instant.
+
+1️⃣ **Hold On**: Play again immediately.
+2️⃣ **Pick Two**: The next player must draw 2 cards.
+5️⃣ **Pick Three**: The next player must draw 3 cards.
+8️⃣ **Suspension**: The next player's turn is skipped.
+1️⃣4️⃣ **General Market**: Every other player must draw 1 card.
+🃏 **Whot (20)**: This is a wild card! You can play it on any card. After playing it, you get to choose the symbol for the next player to follow.
+
+Now you know the rules. Good luck!
+`
+        await ctx.reply(rulesMsg, { parse_mode: 'Markdown' })
+    })
+}
