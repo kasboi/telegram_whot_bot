@@ -17,7 +17,7 @@
     "proseWrap": "preserve"
   },
   "tasks": {
-    "start": "deno run --unstable-kv --allow-env=TELEGRAM_BOT_TOKEN --allow-net=api.telegram.org --allow-read=.env --allow-write=./data src/bot.ts",
+    "start": "deno run --unstable-kv --allow-all src/bot.ts",
     "dev": "deno run --unstable-kv --watch --allow-all src/bot.ts",
     "check": "deno check --unstable-kv --allow-import **/*.ts",
     "lint": "deno lint",

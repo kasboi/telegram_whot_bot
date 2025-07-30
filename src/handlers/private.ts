@@ -1,5 +1,5 @@
 import { Bot, InlineKeyboard } from 'https://deno.land/x/grammy@v1.37.0/mod.ts'
-import { getGame, getCurrentPlayer, getTopCard, playCard, drawCard, selectWhotSymbol } from '../game/state.ts'
+import { getGame, getCurrentPlayer, getTopCard, playCard, drawCard, selectWhotSymbol, clearGame } from '../game/state.ts'
 import { getValidCards, formatCard, getCardEmoji } from '../game/cards.ts'
 import { type Card } from '../types/game.ts'
 import { logger } from '../utils/logger.ts'
@@ -287,6 +287,8 @@ export function handleCardPlay(bot: Bot) {
         if (result.gameEnded) {
           await bot.api.sendMessage(groupChatId, `🏆 **${userName} WINS!** 🏆\n\nGame over! 🎉`, { parse_mode: 'Markdown' })
           await sendGameStats(bot, gameForGroup)
+          // Clean up ended game from storage
+          clearGame(groupChatId)
         } else {
           const announceMessage = generateGroupStatusMessage(gameForGroup)
           await bot.api.sendMessage(groupChatId, announceMessage, { parse_mode: 'Markdown' })
@@ -341,6 +343,8 @@ export function handleDrawCard(bot: Bot) {
       await bot.api.sendMessage(groupChatId, tenderMessage, { parse_mode: 'Markdown' })
       await safeAnswerCallbackQuery(ctx, 'The game has ended!')
       await sendGameStats(bot, game)
+      // Clean up ended game from storage
+      clearGame(groupChatId)
       return
     }
 

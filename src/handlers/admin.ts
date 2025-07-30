@@ -1,6 +1,7 @@
 import { Bot } from 'https://deno.land/x/grammy@v1.37.0/mod.ts'
 import { gameState, getPersistenceManager, clearGame } from '../game/state.ts'
 import { logger } from '../utils/logger.ts'
+import { CommandContext, Context } from "https://deno.land/x/grammy@v1.37.0/context.ts"
 
 /**
  * Admin commands for game management and persistence monitoring
@@ -15,13 +16,26 @@ const ADMIN_IDS: number[] = [
 function isAdmin(userId: number): boolean {
   // For development/testing: allow group creators to use admin commands
   // TODO: Remove this in production and use ADMIN_IDS only
-  return ADMIN_IDS.includes(userId) || true // Temporarily allow all users for debugging
+  return ADMIN_IDS.includes(userId) // || true // Temporarily allow all users for debugging
 }
+
+async function updateAdminList(ctx: CommandContext<Context>) {
+  const adminUsers = await ctx.getChatAdministrators()
+
+  adminUsers.forEach(admin => {
+    if (!ADMIN_IDS.includes(admin.user.id)) {
+      ADMIN_IDS.push(admin.user.id)
+    }
+  })
+}
+
 
 export function handleAdminCommands(bot: Bot) {
 
   // Command to show persistence status
   bot.command('persiststatus', async (ctx) => {
+    await updateAdminList(ctx)
+
     if (!ctx.from || !isAdmin(ctx.from.id)) {
       await ctx.reply('❌ Admin access required')
       return
@@ -67,6 +81,8 @@ export function handleAdminCommands(bot: Bot) {
 
   // Command to show active games
   bot.command('listgames', async (ctx) => {
+    await updateAdminList(ctx)
+
     if (!ctx.from || !isAdmin(ctx.from.id)) {
       await ctx.reply('❌ Admin access required')
       return
@@ -104,6 +120,7 @@ export function handleAdminCommands(bot: Bot) {
 
   // Command to force start a specific game (for debugging)
   bot.command('forcestart', async (ctx) => {
+    await updateAdminList(ctx)
     if (!ctx.from || !isAdmin(ctx.from.id)) {
       await ctx.reply('❌ Admin access required')
       return
@@ -162,6 +179,7 @@ export function handleAdminCommands(bot: Bot) {
 
   // Command to force clean a specific game
   bot.command('forceclean', async (ctx) => {
+    await updateAdminList(ctx)
     if (!ctx.from || !isAdmin(ctx.from.id)) {
       await ctx.reply('❌ Admin access required')
       return
@@ -221,6 +239,7 @@ export function handleAdminCommands(bot: Bot) {
 
   // Command to clean up stale games
   bot.command('cleangames', async (ctx) => {
+    await updateAdminList(ctx)
     if (!ctx.from || !isAdmin(ctx.from.id)) {
       await ctx.reply('❌ Admin access required')
       return
@@ -264,6 +283,7 @@ export function handleAdminCommands(bot: Bot) {
 
   // Command to manually recover games from KV storage
   bot.command('recovergames', async (ctx) => {
+    await updateAdminList(ctx)
     if (!ctx.from || !isAdmin(ctx.from.id)) {
       await ctx.reply('❌ Admin access required')
       return
@@ -296,6 +316,159 @@ export function handleAdminCommands(bot: Bot) {
     } catch (error) {
       await ctx.reply(`❌ Recovery failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
       logger.error('Admin game recovery failed', {
+        userId: ctx.from?.id,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    }
+  })
+
+  // Command to kill an ongoing game
+  bot.command('killgame', async (ctx) => {
+    await updateAdminList(ctx)
+    if (!ctx.from || !isAdmin(ctx.from.id)) {
+      await ctx.reply('❌ Admin access required')
+      return
+    }
+
+    try {
+      const args = ctx.message?.text?.split(' ')
+      if (!args || args.length < 2) {
+        // Show current ongoing games
+        const ongoingGames = Array.from(gameState.entries()).filter(([_, game]) =>
+          game.state === 'in_progress' || game.state === 'waiting_for_players' || game.state === 'ready_to_start'
+        )
+
+        if (ongoingGames.length === 0) {
+          await ctx.reply('📭 No ongoing games to kill')
+          return
+        }
+
+        let gamesList = '💀 **Ongoing Games Available to Kill:**\n\n'
+        for (const [groupChatId, game] of ongoingGames) {
+          gamesList += `**${groupChatId}**: ${game.state} (${game.players.length} players)\n`
+          gamesList += `  Players: ${game.players.map(p => p.firstName).join(', ')}\n`
+        }
+        gamesList += '\n💡 Usage: `/killgame <groupChatId>`'
+
+        await ctx.reply(gamesList, { parse_mode: 'Markdown' })
+        return
+      }
+
+      const groupChatId = parseInt(args[1])
+      if (isNaN(groupChatId)) {
+        await ctx.reply('❌ Invalid group chat ID')
+        return
+      }
+
+      const game = gameState.get(groupChatId)
+      if (!game) {
+        await ctx.reply('❌ Game not found')
+        return
+      }
+
+      if (game.state === 'ended') {
+        await ctx.reply('❌ Game is already ended')
+        return
+      }
+
+      // Notify players in the group chat that the game was terminated
+      try {
+        const adminName = ctx.from.first_name || 'Admin'
+        const terminationMessage = `🚨 **GAME TERMINATED BY ADMIN** 🚨\n\n` +
+          `The game has been forcefully ended by ${adminName}.\n` +
+          `All players have been notified.`
+
+        await bot.api.sendMessage(groupChatId, terminationMessage, { parse_mode: 'Markdown' })
+
+        // Notify each player privately
+        for (const player of game.players) {
+          try {
+            await bot.api.sendMessage(
+              player.id,
+              `🚨 **Game Terminated**\n\nYour Whot game in group chat ${groupChatId} has been terminated by an administrator.`,
+              { parse_mode: 'Markdown' }
+            )
+          } catch (error) {
+            logger.warn('Failed to notify player of game termination', {
+              playerId: player.id,
+              groupChatId,
+              error: error instanceof Error ? error.message : String(error)
+            })
+          }
+        }
+      } catch (error) {
+        logger.warn('Failed to send termination notifications', {
+          groupChatId,
+          error: error instanceof Error ? error.message : String(error)
+        })
+      }
+
+      // Store game info before clearing
+      const gameInfo = `${game.state} (${game.players.length} players: ${game.players.map(p => p.firstName).join(', ')})`
+
+      // Clear the game
+      clearGame(groupChatId)
+
+      await ctx.reply(`💀 **Game Killed Successfully**\n\nGroup ${groupChatId}: ${gameInfo}\n\nAll players have been notified.`, { parse_mode: 'Markdown' })
+
+      logger.info('Admin killed ongoing game', {
+        userId: ctx.from?.id,
+        adminName: ctx.from.first_name,
+        groupChatId,
+        gameState: game.state,
+        playerCount: game.players.length,
+        players: game.players.map(p => ({ id: p.id, name: p.firstName }))
+      })
+
+    } catch (error) {
+      await ctx.reply(`❌ Kill game failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      logger.error('Admin kill game failed', {
+        userId: ctx.from?.id,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    }
+  })
+
+  // Command to show admin help
+  bot.command('adminhelp', async (ctx) => {
+    await updateAdminList(ctx)
+    if (!ctx.from || !isAdmin(ctx.from.id)) {
+      await ctx.reply('❌ Admin access required')
+      return
+    }
+
+    const adminHelpMessage = `🔧 **Admin Commands:**
+
+**Game Management:**
+• \`/killgame [groupChatId]\` - Terminate an ongoing game with player notifications
+• \`/forceclean [groupChatId]\` - Force clean a specific game  
+• \`/forcestart [groupChatId]\` - Force start a ready game
+• \`/cleangames\` - Clean up stale games (24+ hours old)
+
+**Monitoring:**
+• \`/persiststatus\` - Show persistence and memory status
+• \`/listgames\` - List all active games
+• \`/recovergames\` - Manually recover games from KV storage
+
+**Help:**
+• \`/adminhelp\` - Show this admin help message
+
+💡 Run commands without parameters to see available options.`
+
+    try {
+      // Send the help message to the admin's private DM
+      await bot.api.sendMessage(ctx.from.id, adminHelpMessage, { parse_mode: 'Markdown' })
+      
+      // Acknowledge in the current chat if it's not already a private chat
+      if (ctx.chat.type !== 'private') {
+        await ctx.reply('📨 Admin help sent to your private messages')
+      }
+      
+      logger.info('Admin viewed help', { userId: ctx.from?.id, chatType: ctx.chat.type })
+    } catch (error) {
+      // If we can't send to DM (user hasn't started bot), fall back to current chat
+      await ctx.reply(`❌ Unable to send DM. Please start a private chat with the bot first.\n\n${adminHelpMessage}`, { parse_mode: 'Markdown' })
+      logger.warn('Failed to send admin help via DM', {
         userId: ctx.from?.id,
         error: error instanceof Error ? error.message : String(error)
       })

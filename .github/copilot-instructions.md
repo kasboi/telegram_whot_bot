@@ -1,5 +1,13 @@
 # Copilot Instructions - Telegram Whot Game Bot
 
+## Action
+
+For every task and problem brought up, follow these guidelines:
+
+- Explain your understanding of the problem
+- Provide a clear, step-by-step solution
+- Ask for confirmation before proceeding to the next stage of development
+
 ## Architecture Overview
 
 Multiplayer Whot card game bot using **dual chat pattern**: group chats for public coordination, private chats for individual gameplay.

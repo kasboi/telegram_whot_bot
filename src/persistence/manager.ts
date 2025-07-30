@@ -291,13 +291,23 @@ export class PersistenceManager {
         try {
           const game = await this.kvStore.loadGame(groupChatId)
           if (game) {
-            this.memoryStore.set(groupChatId, game)
-            recovered++
-            logger.debug('Recovered game from KV', {
-              groupChatId,
-              state: game.state,
-              players: game.players.length
-            })
+            // Extra safety check: only recover non-ended games
+            if (game.state !== 'ended') {
+              this.memoryStore.set(groupChatId, game)
+              recovered++
+              logger.debug('Recovered game from KV', {
+                groupChatId,
+                state: game.state,
+                players: game.players.length
+              })
+            } else {
+              // Found an ended game that shouldn't be active - clean it up
+              logger.warn('Found ended game marked as active - cleaning up', {
+                groupChatId,
+                state: game.state
+              })
+              await this.kvStore.deleteGame(groupChatId)
+            }
           }
         } catch (error) {
           failed++
