@@ -7,9 +7,15 @@ import { CommandContext, Context } from "https://deno.land/x/grammy@v1.37.0/cont
  * Admin commands for game management and persistence monitoring
  */
 
-// List    const adminHelpMessage = `🔧 **Admin Commands:**
+// List of admin users (replace with actual admin user IDs)
+const ADMIN_USERS = [
+  // Add your admin user IDs here
+  // Example: 123456789
+]
 
-** Game Management(Group Chats Only):**
+const adminHelpMessage = `🔧 **Admin Commands:**
+
+**Game Management (Group Chats Only):**
 • \`/killgame\` - Terminate the ongoing game in current group with player notifications
 • \`/forcestart\` - Force start a ready game in current group
 • \`/cleangames\` - Clean up stale games (24+ hours old)
@@ -22,7 +28,8 @@ import { CommandContext, Context } from "https://deno.land/x/grammy@v1.37.0/cont
 **Help:**
 • \`/adminhelp\` - Show this admin help message
 
-🔒 **Security Note:** Game management commands only work on the current group for security.`s(replace with actual admin IDs)
+🔒 **Security Note:** Game management commands only work on the current group for security.`
+
 const ADMIN_IDS: number[] = [
   // Add admin user IDs here when needed
   // Example: 123456789, 

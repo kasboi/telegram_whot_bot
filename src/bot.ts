@@ -6,6 +6,7 @@ import { logger } from './utils/logger.ts'
 import { initPersistence } from './game/state.ts'
 import { notifyBotRestartWithContext } from './utils/restart-notification.ts'
 import { initTimeoutManager } from './game/timeouts.ts'
+import { checkDowntimeAndCleanup, recordShutdownTime } from './utils/downtime-cleanup.ts'
 
 import "jsr:@std/dotenv/load"
 import { jsonLogger } from "./utils/logger.json.ts"
@@ -88,7 +89,17 @@ async function setupBotCommands() {
 // Start the bot
 async function startBot() {
   try {
-    // Initialize persistence layer first
+    // Check for extended downtime and cleanup if necessary
+    const { wasLongDowntime, cleanedGames } = await checkDowntimeAndCleanup()
+    
+    if (wasLongDowntime) {
+      logger.warn('Extended downtime detected - performed complete cleanup', {
+        cleanedGames,
+        message: 'All game sessions have been cleared due to extended bot downtime'
+      })
+    }
+
+    // Initialize persistence layer
     await initPersistence()
 
     // Initialize timeout manager
@@ -99,8 +110,12 @@ async function startBot() {
     logger.info('Bot is running and waiting for messages')
     jsonLogger.info('Starting Whot Game Bot...')
 
-    // Notify active games that bot has restarted
-    await notifyBotRestartWithContext(bot)
+    // Notify active games that bot has restarted (only if not cleaned up)
+    if (!wasLongDowntime) {
+      await notifyBotRestartWithContext(bot)
+    } else {
+      logger.info('Skipping restart notifications due to cleanup after extended downtime')
+    }
 
     bot.start()
   } catch (error) {
@@ -108,5 +123,37 @@ async function startBot() {
     Deno.exit(1)
   }
 }
+
+// Graceful shutdown handling
+const shutdownHandler = async (signal: string) => {
+  logger.info(`Received ${signal}, shutting down gracefully...`)
+  
+  try {
+    // Record shutdown time for downtime tracking
+    await recordShutdownTime()
+    
+    // Stop the bot
+    await bot.stop()
+    
+    logger.info('Bot shutdown completed')
+    Deno.exit(0)
+  } catch (error) {
+    logger.error('Error during shutdown', { 
+      error: error instanceof Error ? error.message : String(error) 
+    })
+    Deno.exit(1)
+  }
+}
+
+// Register signal handlers for graceful shutdown
+Deno.addSignalListener('SIGINT', () => shutdownHandler('SIGINT'))
+Deno.addSignalListener('SIGTERM', () => shutdownHandler('SIGTERM'))
+
+// Handle unexpected exits
+globalThis.addEventListener('beforeunload', () => {
+  recordShutdownTime().catch(error => {
+    logger.error('Failed to record shutdown time on beforeunload', { error })
+  })
+})
 
 startBot()
