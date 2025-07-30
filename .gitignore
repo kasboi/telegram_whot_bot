@@ -51,3 +51,7 @@ out/
 *.temp
 GEMINI.md
 bot.log.json
+
+# Sensitive test files with API keys
+test.http
+*.http
