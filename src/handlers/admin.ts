@@ -7,7 +7,22 @@ import { CommandContext, Context } from "https://deno.land/x/grammy@v1.37.0/cont
  * Admin commands for game management and persistence monitoring
  */
 
-// List of admin user IDs (replace with actual admin IDs)
+// List    const adminHelpMessage = `🔧 **Admin Commands:**
+
+** Game Management(Group Chats Only):**
+• \`/killgame\` - Terminate the ongoing game in current group with player notifications
+• \`/forcestart\` - Force start a ready game in current group
+• \`/cleangames\` - Clean up stale games (24+ hours old)
+
+**Monitoring (Any Chat):**
+• \`/persiststatus\` - Show persistence and memory status
+• \`/listgames\` - List all active games
+• \`/recovergames\` - Manually recover games from KV storage
+
+**Help:**
+• \`/adminhelp\` - Show this admin help message
+
+🔒 **Security Note:** Game management commands only work on the current group for security.`s(replace with actual admin IDs)
 const ADMIN_IDS: number[] = [
   // Add admin user IDs here when needed
   // Example: 123456789, 
@@ -172,50 +187,6 @@ export function handleAdminCommands(bot: Bot) {
     } catch (error) {
       await ctx.reply(`❌ Force start failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
       logger.error('Admin force start failed', {
-        userId: ctx.from?.id,
-        error: error instanceof Error ? error.message : String(error)
-      })
-    }
-  })
-
-  // Command to force clean a specific game
-  bot.command('forceclean', async (ctx) => {
-    await updateAdminList(ctx)
-    if (!ctx.from || !isAdmin(ctx.from.id)) {
-      await ctx.reply('❌ Admin access required')
-      return
-    }
-
-    // Only work in group chats
-    if (ctx.chat.type === 'private') {
-      await ctx.reply('❌ This command can only be used in group chats')
-      return
-    }
-
-    try {
-      const groupChatId = ctx.chat.id
-
-      const game = gameState.get(groupChatId)
-      if (!game) {
-        await ctx.reply('❌ No game found in this group')
-        return
-      }
-
-      const gameInfo = `${game.state} (${game.players.length} players: ${game.players.map(p => p.firstName).join(', ')})`
-      clearGame(groupChatId)
-
-      await ctx.reply(`✅ Forcefully cleaned game in this group: ${gameInfo}`)
-
-      logger.info('Admin force cleaned game', {
-        userId: ctx.from?.id,
-        groupChatId,
-        gameState: game.state,
-        playerCount: game.players.length
-      })
-
-    } catch (error) {
-      await ctx.reply(`❌ Force clean failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      logger.error('Admin force clean failed', {
         userId: ctx.from?.id,
         error: error instanceof Error ? error.message : String(error)
       })
