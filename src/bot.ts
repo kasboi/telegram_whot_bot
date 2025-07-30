@@ -91,7 +91,7 @@ async function startBot() {
   try {
     // Check for extended downtime and cleanup if necessary
     const { wasLongDowntime, cleanedGames } = await checkDowntimeAndCleanup()
-    
+
     if (wasLongDowntime) {
       logger.warn('Extended downtime detected - performed complete cleanup', {
         cleanedGames,
@@ -127,19 +127,19 @@ async function startBot() {
 // Graceful shutdown handling
 const shutdownHandler = async (signal: string) => {
   logger.info(`Received ${signal}, shutting down gracefully...`)
-  
+
   try {
     // Record shutdown time for downtime tracking
     await recordShutdownTime()
-    
+
     // Stop the bot
     await bot.stop()
-    
+
     logger.info('Bot shutdown completed')
     Deno.exit(0)
   } catch (error) {
-    logger.error('Error during shutdown', { 
-      error: error instanceof Error ? error.message : String(error) 
+    logger.error('Error during shutdown', {
+      error: error instanceof Error ? error.message : String(error)
     })
     Deno.exit(1)
   }

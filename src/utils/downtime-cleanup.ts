@@ -23,7 +23,7 @@ export async function recordShutdownTime(): Promise<void> {
     const kv = await Deno.openKv()
     await kv.set([LAST_SHUTDOWN_KEY], Date.now())
     await kv.close()
-    
+
     logger.info('Bot shutdown time recorded', { timestamp: new Date().toISOString() })
   } catch (error) {
     logger.error('Failed to record shutdown time', {
@@ -50,7 +50,7 @@ export async function checkDowntimeAndCleanup(): Promise<{ wasLongDowntime: bool
     if (lastShutdownResult.value !== null) {
       const lastShutdownTime = lastShutdownResult.value as number
       downtimeMs = currentTime - lastShutdownTime
-      
+
       logger.info('Bot downtime calculated', {
         lastShutdown: new Date(lastShutdownTime).toISOString(),
         currentTime: new Date(currentTime).toISOString(),
@@ -91,7 +91,7 @@ async function recordCurrentStartupTime(): Promise<void> {
     const kv = await Deno.openKv()
     await kv.set([LAST_SHUTDOWN_KEY], Date.now())
     await kv.close()
-    
+
     logger.debug('Current startup time recorded for next downtime check')
   } catch (error) {
     logger.warn('Failed to record startup time', {
@@ -110,15 +110,15 @@ async function performCompleteCleanup(): Promise<number> {
     // Get current games before cleanup
     const memoryStore = getMemoryStore()
     const gameIds = Array.from(memoryStore.keys())
-    
+
     if (gameIds.length === 0) {
       logger.info('No games found to clean up')
       return 0
     }
 
-    logger.info('Starting complete game session cleanup', { 
+    logger.info('Starting complete game session cleanup', {
       totalGames: gameIds.length,
-      gameIds 
+      gameIds
     })
 
     // Clear all games from memory
@@ -164,7 +164,7 @@ async function performCompleteCleanup(): Promise<number> {
 async function clearOrphanedKVEntries(): Promise<void> {
   try {
     const kv = await Deno.openKv()
-    
+
     // Clear all game-related entries
     const gameEntries = kv.list({ prefix: ['games'] })
     const activeGameEntries = kv.list({ prefix: ['active_games'] })

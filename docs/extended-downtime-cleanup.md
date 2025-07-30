@@ -9,11 +9,13 @@ Implemented a comprehensive cleanup system to handle cases where the bot is offl
 ### 1. Downtime Detection (`src/utils/downtime-cleanup.ts`)
 
 **Key Features:**
+
 - 10-minute threshold for determining "extended downtime"
 - Tracks last shutdown time in KV storage
 - Automatic cleanup of all game sessions if downtime exceeds threshold
 
 **Functions:**
+
 - `recordShutdownTime()` - Records when bot shuts down
 - `checkDowntimeAndCleanup()` - Checks downtime on startup and cleans if needed
 - `performCompleteCleanup()` - Removes all game sessions from memory and KV storage
@@ -22,12 +24,14 @@ Implemented a comprehensive cleanup system to handle cases where the bot is offl
 ### 2. Bot Integration (`src/bot.ts`)
 
 **Startup Sequence:**
+
 1. Check for extended downtime (>10 minutes)
 2. If detected, perform complete cleanup of all sessions
 3. Skip restart notifications if cleanup was performed
 4. Continue with normal bot initialization
 
 **Graceful Shutdown:**
+
 - Registers signal handlers for SIGINT and SIGTERM
 - Records shutdown time before stopping
 - Handles unexpected exits with beforeunload event
@@ -58,7 +62,7 @@ The system operates automatically:
 ## Configuration
 
 ```typescript
-const DOWNTIME_THRESHOLD_MS = 10 * 60 * 1000 // 10 minutes
+const DOWNTIME_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
 ```
 
 The threshold can be adjusted based on operational requirements.
