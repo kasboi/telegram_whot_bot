@@ -19,6 +19,8 @@
   "tasks": {
     "start": "deno run --unstable-kv --allow-all src/bot.ts",
     "dev": "deno run --unstable-kv --watch --allow-all src/bot.ts",
+    "webhook": "deno run --unstable-kv --allow-all main.ts",
+    "webhook:dev": "deno run --unstable-kv --watch --allow-all main.ts",
     "check": "deno check --unstable-kv --allow-import **/*.ts",
     "lint": "deno lint",
     "test": "deno test --unstable-kv --allow-all"

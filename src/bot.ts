@@ -20,8 +20,9 @@ if (!botToken) {
   Deno.exit(1)
 }
 
+
 // Create bot instance
-const bot = new Bot(botToken)
+export const bot = new Bot(botToken)
 
 // Add debug logging for all callback queries
 bot.on('callback_query', async (ctx, next) => {
@@ -86,8 +87,8 @@ async function setupBotCommands() {
   logger.info('Bot commands registered successfully')
 }
 
-// Start the bot
-async function startBot() {
+// Initialize the bot (called from webhook handler)
+export async function initBot() {
   try {
     // Check for extended downtime and cleanup if necessary
     const { wasLongDowntime, cleanedGames } = await checkDowntimeAndCleanup()
@@ -106,9 +107,8 @@ async function startBot() {
     initTimeoutManager(bot)
 
     await setupBotCommands()
-    logger.info('Starting Whot Game Bot...')
-    logger.info('Bot is running and waiting for messages')
-    jsonLogger.info('Starting Whot Game Bot...')
+    logger.info('Whot Game Bot initialized for webhook mode')
+    jsonLogger.info('Whot Game Bot initialized for webhook mode')
 
     // Notify active games that bot has restarted (only if not cleaned up)
     if (!wasLongDowntime) {
@@ -117,6 +117,21 @@ async function startBot() {
       logger.info('Skipping restart notifications due to cleanup after extended downtime')
     }
 
+    return true
+  } catch (error) {
+    logger.error('Failed to initialize bot', { error: error instanceof Error ? error.message : String(error) })
+    return false
+  }
+}
+
+// For development/local testing - keep the polling version
+async function startBotPolling() {
+  const success = await initBot()
+  if (!success) {
+    Deno.exit(1)
+  }
+
+  try {
     bot.start()
   } catch (error) {
     logger.error('Failed to start bot', { error: error instanceof Error ? error.message : String(error) })
@@ -124,36 +139,39 @@ async function startBot() {
   }
 }
 
-// Graceful shutdown handling
-const shutdownHandler = async (signal: string) => {
-  logger.info(`Received ${signal}, shutting down gracefully...`)
+// Only start polling if running directly (not imported for webhook)
+if (import.meta.main) {
+  // Graceful shutdown handling for polling mode
+  const shutdownHandler = async (signal: string) => {
+    logger.info(`Received ${signal}, shutting down gracefully...`)
 
-  try {
-    // Record shutdown time for downtime tracking
-    await recordShutdownTime()
+    try {
+      // Record shutdown time for downtime tracking
+      await recordShutdownTime()
 
-    // Stop the bot
-    await bot.stop()
+      // Stop the bot
+      await bot.stop()
 
-    logger.info('Bot shutdown completed')
-    Deno.exit(0)
-  } catch (error) {
-    logger.error('Error during shutdown', {
-      error: error instanceof Error ? error.message : String(error)
-    })
-    Deno.exit(1)
+      logger.info('Bot shutdown completed')
+      Deno.exit(0)
+    } catch (error) {
+      logger.error('Error during shutdown', {
+        error: error instanceof Error ? error.message : String(error)
+      })
+      Deno.exit(1)
+    }
   }
-}
 
-// Register signal handlers for graceful shutdown
-Deno.addSignalListener('SIGINT', () => shutdownHandler('SIGINT'))
-Deno.addSignalListener('SIGTERM', () => shutdownHandler('SIGTERM'))
+  // Register signal handlers for graceful shutdown
+  Deno.addSignalListener('SIGINT', () => shutdownHandler('SIGINT'))
+  Deno.addSignalListener('SIGTERM', () => shutdownHandler('SIGTERM'))
 
-// Handle unexpected exits
-globalThis.addEventListener('beforeunload', () => {
-  recordShutdownTime().catch(error => {
-    logger.error('Failed to record shutdown time on beforeunload', { error })
+  // Handle unexpected exits
+  globalThis.addEventListener('beforeunload', () => {
+    recordShutdownTime().catch(error => {
+      logger.error('Failed to record shutdown time on beforeunload', { error })
+    })
   })
-})
 
-startBot()
+  startBotPolling()
+}
