@@ -369,7 +369,7 @@ export function handleAdminCommands(bot: Bot) {
 
       // Store game info before clearing
       const gameInfo = `${game.state} (${game.players.length} players: ${game.players.map(p => p.firstName).join(', ')})`
-      
+
       // Clear the game
       clearGame(groupChatId)
 
