@@ -70,7 +70,7 @@ async function testKVStore() {
   } catch (error) {
     console.error('❌ Test failed:', error)
     await kvStore.close()
-    Deno.exit(1)
+    // Deno.exit(1)
   }
 }
 

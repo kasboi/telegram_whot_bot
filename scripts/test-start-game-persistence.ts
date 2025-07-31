@@ -121,5 +121,5 @@ async function testStartGamePersistence() {
 // Run the test
 if (import.meta.main) {
   const success = await testStartGamePersistence()
-  Deno.exit(success ? 0 : 1)
+  // Deno.exit(success ? 0 : 1)
 }

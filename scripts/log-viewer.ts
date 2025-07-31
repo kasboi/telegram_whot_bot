@@ -124,7 +124,7 @@ async function readLogFile(filename: string): Promise<string[]> {
     return content.split('\n').filter(line => line.trim())
   } catch (error) {
     console.error(`Error reading log file: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    Deno.exit(1)
+    // Deno.exit(1)
   }
 }
 
@@ -185,7 +185,7 @@ Examples:
   deno run --allow-read scripts/log-viewer.ts --follow
   deno run --allow-read scripts/log-viewer.ts --last 50
     `)
-    Deno.exit(0)
+    // Deno.exit(0)
   }
 
   const logFile = 'bot.log'

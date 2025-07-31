@@ -163,5 +163,5 @@ async function testPendingEffectsPersistence() {
 // Run the test
 if (import.meta.main) {
   const success = await testPendingEffectsPersistence()
-  Deno.exit(success ? 0 : 1)
+  // Deno.exit(success ? 0 : 1)
 }

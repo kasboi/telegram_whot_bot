@@ -22,7 +22,7 @@ function checkEnvironment() {
     console.error("Then run:")
     console.error('export TELEGRAM_BOT_TOKEN="your_token_here"')
     console.error("deno task dev")
-    Deno.exit(1)
+    // Deno.exit(1)
   }
 
   console.log("✅ Environment variables loaded")
@@ -53,7 +53,7 @@ function main() {
       error: error instanceof Error ? error.message : String(error),
     })
     console.error("❌ Failed to start bot:", error)
-    Deno.exit(1)
+    // Deno.exit(1)
   }
 }
 

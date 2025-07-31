@@ -17,7 +17,7 @@ const botToken = Deno.env.get('TELEGRAM_BOT_TOKEN')
 // Validate bot token
 if (!botToken) {
   logger.error('TELEGRAM_BOT_TOKEN environment variable is required')
-  Deno.exit(1)
+  // Deno.exit(1)
 }
 
 
@@ -128,14 +128,14 @@ export async function initBot() {
 async function startBotPolling() {
   const success = await initBot()
   if (!success) {
-    Deno.exit(1)
+    // Deno.exit(1)
   }
 
   try {
     bot.start()
   } catch (error) {
     logger.error('Failed to start bot', { error: error instanceof Error ? error.message : String(error) })
-    Deno.exit(1)
+    // Deno.exit(1)
   }
 }
 
@@ -153,12 +153,12 @@ if (import.meta.main) {
       await bot.stop()
 
       logger.info('Bot shutdown completed')
-      Deno.exit(0)
+      // Deno.exit(0)
     } catch (error) {
       logger.error('Error during shutdown', {
         error: error instanceof Error ? error.message : String(error)
       })
-      Deno.exit(1)
+      // Deno.exit(1)
     }
   }
 
