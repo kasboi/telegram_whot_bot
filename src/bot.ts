@@ -17,9 +17,8 @@ const botToken = Deno.env.get('TELEGRAM_BOT_TOKEN')
 // Validate bot token
 if (!botToken) {
   logger.error('TELEGRAM_BOT_TOKEN environment variable is required')
-  // Deno.exit(1)
+  throw new Error('TELEGRAM_BOT_TOKEN environment variable is required')
 }
-
 
 // Create bot instance
 export const bot = new Bot(botToken)
@@ -125,7 +124,7 @@ export async function initBot() {
 }
 
 // For development/local testing - keep the polling version
-async function startBotPolling() {
+export async function startBotPolling() {
   const success = await initBot()
   if (!success) {
     // Deno.exit(1)

@@ -22,11 +22,12 @@ function checkEnvironment() {
     console.error("Then run:")
     console.error('export TELEGRAM_BOT_TOKEN="your_token_here"')
     console.error("deno task dev")
-    // Deno.exit(1)
+    return false
   }
 
   console.log("✅ Environment variables loaded")
   console.log(`🤖 Bot token: ${botToken.substring(0, 10)}...`)
+  return true
 }
 
 // Main development startup
@@ -34,7 +35,10 @@ function main() {
   console.log("🎮 Starting Telegram Whot Bot in development mode...")
   console.log("")
 
-  checkEnvironment()
+  const envCheck = checkEnvironment()
+  if (!envCheck) {
+    return
+  }
 
   try {
     // Initialize bot handlers

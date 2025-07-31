@@ -5,6 +5,7 @@ import { sendPlayerHand } from './private.ts'
 import { generateGroupStatusMessage } from "./updates.ts"
 import { safeAnswerCallbackQuery } from '../utils/callback.ts'
 import { getTimeoutManager } from '../game/timeouts.ts'
+import { deliverAllPlayerHands, notifyPrivateMessageRequired } from '../game/handDelivery.ts'
 
 async function updateLobbyMessage(ctx: Context, groupChatId: number) {
     const game = getGame(groupChatId)
@@ -67,17 +68,31 @@ export function handleStartGame(bot: Bot) {
                     // Creator using /startgame on a ready game - auto-start it
                     const success = startGameWithCards(groupChatId)
                     if (success) {
-                        await ctx.reply('🎮 **Game Started!** 🎮\n\nCards have been dealt! Check your private messages for your hand.')
+                        await ctx.reply('🎮 **Game Started!** 🎮\n\nCards are being dealt! Check your private messages for your hand.')
 
                         const game = getGame(groupChatId)
                         if (game) {
                             const messageText = generateGroupStatusMessage(game)
                             await ctx.reply(messageText, { parse_mode: 'Markdown' })
 
-                            // Send hands to all players
-                            for (const player of game.players) {
-                                await sendPlayerHand(bot, groupChatId, player.id, player.firstName)
+                            // Enhanced hand delivery with error handling
+                            const deliveryResults = await deliverAllPlayerHands(bot, groupChatId, game.players)
+
+                            // Check for failed deliveries and notify players
+                            const failedDeliveries = deliveryResults.filter(result => !result.success)
+                            if (failedDeliveries.length > 0) {
+                                await notifyPrivateMessageRequired(bot, groupChatId, failedDeliveries)
                             }
+
+                            // Log delivery summary
+                            const successCount = deliveryResults.filter(r => r.success).length
+                            logger.info('Game start hand delivery summary', {
+                                groupChatId,
+                                totalPlayers: game.players.length,
+                                successfulDeliveries: successCount,
+                                failedDeliveries: failedDeliveries.length,
+                                playersNeedingHelp: failedDeliveries.map(f => f.playerName)
+                            })
                         }
                         return
                     } else {
@@ -229,14 +244,27 @@ export function handleCallbackQuery(bot: Bot) {
                     const messageText = generateGroupStatusMessage(game)
                     await ctx.editMessageText(messageText, { parse_mode: 'Markdown' })
 
-                    // Send hands to all players
-                    for (const player of game.players) {
-                        await sendPlayerHand(bot, groupChatId, player.id, player.firstName)
+                    // Enhanced hand delivery with error handling
+                    const deliveryResults = await deliverAllPlayerHands(bot, groupChatId, game.players)
+
+                    // Check for failed deliveries and notify players
+                    const failedDeliveries = deliveryResults.filter(result => !result.success)
+                    if (failedDeliveries.length > 0) {
+                        await notifyPrivateMessageRequired(bot, groupChatId, failedDeliveries)
                     }
 
-                    // Start turn timeout for first player
+                    // Start turn timeout for first player (only if they received their cards)
                     const currentPlayer = game.players[game.currentPlayerIndex!]
-                    timeoutManager.startTurnTimeout(groupChatId, currentPlayer.id)
+                    const currentPlayerDelivery = deliveryResults.find(r => r.playerId === currentPlayer.id)
+                    if (currentPlayerDelivery?.success) {
+                        timeoutManager.startTurnTimeout(groupChatId, currentPlayer.id)
+                    } else {
+                        logger.info('Turn timeout delayed - current player needs private message setup', {
+                            groupChatId,
+                            playerId: currentPlayer.id,
+                            playerName: currentPlayer.firstName
+                        })
+                    }
                 }
                 break
             }
