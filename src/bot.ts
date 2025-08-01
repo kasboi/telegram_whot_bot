@@ -7,6 +7,7 @@ import { initPersistence } from './game/state.ts'
 import { notifyBotRestartWithContext } from './utils/restart-notification.ts'
 import { initTimeoutManager } from './game/timeouts.ts'
 import { checkDowntimeAndCleanup, recordShutdownTime } from './utils/downtime-cleanup.ts'
+import { safeExit, getEnvironmentInfo } from './utils/environment.ts'
 
 import "jsr:@std/dotenv/load"
 import { jsonLogger } from "./utils/logger.json.ts"
@@ -22,6 +23,15 @@ if (!botToken) {
   logger.error('TELEGRAM_BOT_TOKEN environment variable is required')
   throw new Error('TELEGRAM_BOT_TOKEN environment variable is required')
 }
+
+// Log environment information
+const envInfo = getEnvironmentInfo()
+logger.info('Bot starting', {
+  environment: envInfo.mode,
+  isMain: envInfo.isMain,
+  nodeEnv: envInfo.nodeEnv,
+  denoEnv: envInfo.denoEnv
+})
 
 // Create bot instance
 export const bot = new Bot<MyContext>(botToken)
@@ -134,14 +144,14 @@ export async function initBot() {
 export async function startBotPolling() {
   const success = await initBot()
   if (!success) {
-    // Deno.exit(1)
+    safeExit(1, 'Failed to initialize bot')
   }
 
   try {
     bot.start()
   } catch (error) {
     logger.error('Failed to start bot', { error: error instanceof Error ? error.message : String(error) })
-    // Deno.exit(1)
+    safeExit(1, 'Failed to start bot')
   }
 }
 
@@ -159,12 +169,12 @@ if (import.meta.main) {
       await bot.stop()
 
       logger.info('Bot shutdown completed')
-      // Deno.exit(0)
+      safeExit(0, 'Graceful shutdown completed')
     } catch (error) {
       logger.error('Error during shutdown', {
         error: error instanceof Error ? error.message : String(error)
       })
-      // Deno.exit(1)
+      safeExit(1, 'Error during shutdown')
     }
   }
 

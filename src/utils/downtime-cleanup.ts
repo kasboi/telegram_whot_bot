@@ -1,5 +1,5 @@
 import { logger } from './logger.ts'
-import { getPersistenceManager, getMemoryStore } from '../game/state.ts'
+import { getPersistenceManager, getMemoryStore, gameState } from '../game/state.ts'
 
 /**
  * Tracks bot startup time and handles cleanup after extended downtime
@@ -205,11 +205,19 @@ async function clearOrphanedKVEntries(): Promise<void> {
 
 /**
  * Performs smart cleanup of stale games based on age and activity
+ * WARNING: This affects ALL groups - use with caution!
  */
 export async function cleanupStaleGames(): Promise<{ cleaned: number; details: Array<{ id: number; reason: string; age: number }> }> {
   const memoryStore = getMemoryStore()
   const now = Date.now()
   const cleaned: Array<{ id: number; reason: string; age: number }> = []
+
+  // Log security warning for cross-group cleanup
+  logger.warn('Performing cross-group stale game cleanup', {
+    totalGroups: memoryStore.size,
+    groupIds: Array.from(memoryStore.keys()),
+    timestamp: new Date().toISOString()
+  })
 
   try {
     for (const [gameId, game] of memoryStore.entries()) {
@@ -259,21 +267,23 @@ export async function cleanupStaleGames(): Promise<{ cleaned: number; details: A
 
         cleaned.push({ id: gameId, reason, age: Math.round(gameAge / (60 * 1000)) })
 
-        logger.info('Cleaned stale game', {
+        logger.warn('Cleaned stale game from group', {
           gameId,
           reason,
           ageMinutes: Math.round(gameAge / (60 * 1000)),
           state: game.state,
-          playerCount: game.players.length
+          playerCount: game.players.length,
+          warning: 'CROSS_GROUP_CLEANUP'
         })
       }
     }
 
     if (cleaned.length > 0) {
-      logger.info('Stale game cleanup completed', {
+      logger.warn('Cross-group stale game cleanup completed', {
         cleanedCount: cleaned.length,
         remainingGames: memoryStore.size,
-        details: cleaned
+        details: cleaned,
+        warning: 'AFFECTED_MULTIPLE_GROUPS'
       })
     }
 
@@ -287,25 +297,133 @@ export async function cleanupStaleGames(): Promise<{ cleaned: number; details: A
 }
 
 /**
- * Starts a periodic cleanup interval that runs every hour
+ * Safe cleanup function for a specific group only
  */
-export function startPeriodicCleanup(): void {
+export async function cleanupStaleGamesForGroup(groupId: number): Promise<{ cleaned: boolean; reason?: string; age?: number }> {
+  const memoryStore = getMemoryStore()
+  const game = memoryStore.get(groupId)
+
+  if (!game) {
+    return { cleaned: false }
+  }
+
+  const now = Date.now()
+  const gameAge = now - game.createdAt.getTime()
+  let shouldClean = false
+  let reason = ''
+
+  // Same cleanup logic but for single group
+  if (gameAge > STALE_GAME_THRESHOLD_MS) {
+    if (game.state === 'waiting_for_players' || game.state === 'ready_to_start') {
+      shouldClean = true
+      reason = 'Stale lobby (24+ hours old)'
+    } else if (game.state === 'in_progress') {
+      const lastActivity = game.lastActionTime || game.createdAt
+      const timeSinceActivity = now - lastActivity.getTime()
+
+      if (timeSinceActivity > (6 * 60 * 60 * 1000)) {
+        shouldClean = true
+        reason = 'Inactive game (6+ hours no activity)'
+      }
+    } else if (game.state === 'ended') {
+      if (gameAge > (60 * 60 * 1000)) {
+        shouldClean = true
+        reason = 'Ended game cleanup'
+      }
+    }
+  }
+
+  if (shouldClean) {
+    // Clear from memory
+    memoryStore.delete(groupId)
+
+    // Clear from persistence
+    const persistenceManager = getPersistenceManager()
+    if (persistenceManager) {
+      try {
+        await persistenceManager.deleteGame(groupId)
+      } catch (error) {
+        logger.warn('Failed to delete game from persistence', {
+          groupId,
+          error: error instanceof Error ? error.message : String(error)
+        })
+      }
+    }
+
+    logger.info('Cleaned stale game for specific group', {
+      groupId,
+      reason,
+      ageMinutes: Math.round(gameAge / (60 * 1000)),
+      state: game.state,
+      playerCount: game.players.length,
+      cleanupType: 'GROUP_SPECIFIC_SAFE'
+    })
+
+    return {
+      cleaned: true,
+      reason,
+      age: Math.round(gameAge / (60 * 1000))
+    }
+  }
+
+  return { cleaned: false }
+}
+
+/**
+ * Starts a periodic cleanup interval that runs every hour
+ * WARNING: This affects ALL groups! Use with extreme caution.
+ */
+export function startPeriodicCleanup(enableCrossGroupCleanup: boolean = false): void {
+  if (!enableCrossGroupCleanup) {
+    logger.warn('Periodic cross-group cleanup DISABLED for security', {
+      reason: 'CROSS_GROUP_SECURITY_RISK',
+      message: 'Call startPeriodicCleanup(true) to enable dangerous cross-group cleanup'
+    })
+    return
+  }
+
+  logger.warn('Starting DANGEROUS periodic cross-group cleanup', {
+    intervalMs: 60 * 60 * 1000,
+    currentGames: gameState.size,
+    startTime: new Date().toISOString(),
+    warning: 'AFFECTS_ALL_GROUPS'
+  })
+
   // Run cleanup every hour
   setInterval(async () => {
     try {
+      logger.warn('Running DANGEROUS periodic cross-group cleanup check', {
+        currentGames: gameState.size,
+        timestamp: new Date().toISOString(),
+        warning: 'AFFECTS_ALL_GROUPS'
+      })
+
       const result = await cleanupStaleGames()
+
       if (result.cleaned > 0) {
-        logger.info('Periodic cleanup completed', {
+        logger.error('Periodic cleanup removed games from multiple groups', {
           cleanedGames: result.cleaned,
-          details: result.details.map(d => `${d.id}: ${d.reason} (${d.age}min old)`)
+          details: result.details.map(d => `${d.id}: ${d.reason} (${d.age}min old)`),
+          remaining: gameState.size,
+          CRITICAL: 'CROSS_GROUP_DATA_AFFECTED'
+        })
+      } else {
+        logger.info('Periodic cleanup found no stale games', {
+          totalGames: gameState.size,
+          allGamesAges: Array.from(gameState.entries()).map(([id, game]) => ({
+            id,
+            ageMinutes: Math.floor((Date.now() - game.createdAt.getTime()) / (60 * 1000)),
+            state: game.state
+          }))
         })
       }
     } catch (error) {
       logger.error('Periodic cleanup failed', {
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
       })
     }
   }, 60 * 60 * 1000) // Run every hour
 
-  logger.info('Periodic stale game cleanup started (runs every hour)')
+  logger.warn('DANGEROUS periodic cross-group cleanup started (runs every hour)')
 }

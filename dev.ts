@@ -6,6 +6,7 @@
 
 import { initBot, startBotPolling } from "./src/bot.ts"
 import { logger } from "./src/utils/logger.ts"
+import { safeExit } from "./src/utils/environment.ts"
 
 // Check if environment is set up correctly
 function checkEnvironment() {
@@ -57,7 +58,7 @@ function main() {
       error: error instanceof Error ? error.message : String(error),
     })
     console.error("❌ Failed to start bot:", error)
-    // Deno.exit(1)
+    safeExit(1, "Bot startup failed")
   }
 }
 

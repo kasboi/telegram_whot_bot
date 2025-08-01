@@ -200,7 +200,51 @@ export function handleAdminCommands(bot: Bot) {
     }
   })
 
-  // Command to clean up stale games
+  // Command to show detailed game analysis for debugging
+  bot.command('gameanalysis', async (ctx) => {
+    await updateAdminList(ctx)
+    if (!ctx.from || !isAdmin(ctx.from.id)) {
+      await ctx.reply('❌ Admin access required')
+      return
+    }
+
+    try {
+      if (gameState.size === 0) {
+        await ctx.reply('📭 No games to analyze')
+        return
+      }
+
+      let analysis = '🔍 **Game Analysis (ALL GROUPS - ADMIN VIEW):**\n\n'
+      analysis += `⚠️ **SECURITY WARNING**: This shows games from ALL groups!\n\n`
+
+      for (const [groupChatId, game] of gameState.entries()) {
+        const ageMinutes = Math.floor((Date.now() - game.createdAt.getTime()) / (60 * 1000))
+        const ageHours = Math.floor(ageMinutes / 60)
+        const lastActionAge = game.lastActionTime
+          ? Math.floor((Date.now() - game.lastActionTime.getTime()) / (60 * 1000))
+          : 'N/A'
+
+        analysis += `**Group ${groupChatId}:**\n`
+        analysis += `• State: ${game.state}\n`
+        analysis += `• Players: ${game.players.length}\n`
+        analysis += `• Age: ${ageHours}h ${ageMinutes % 60}m\n`
+        analysis += `• Last action: ${lastActionAge === 'N/A' ? 'N/A' : `${lastActionAge}min ago`}\n`
+        analysis += `• Should clean?: ${ageMinutes > (24 * 60) ? '🚨 YES' : '✅ NO'}\n\n`
+      }
+
+      await ctx.reply(analysis, { parse_mode: 'Markdown' })
+
+      logger.warn('Admin performed cross-group game analysis', {
+        userId: ctx.from?.id,
+        gameCount: gameState.size,
+        groupIds: Array.from(gameState.keys())
+      })
+    } catch (error) {
+      await ctx.reply(`❌ Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  })
+
+  // Command to clean up stale games (DANGEROUS - affects ALL groups)
   bot.command('cleangames', async (ctx) => {
     await updateAdminList(ctx)
     if (!ctx.from || !isAdmin(ctx.from.id)) {
@@ -209,6 +253,8 @@ export function handleAdminCommands(bot: Bot) {
     }
 
     try {
+      await ctx.reply('⚠️ **SECURITY WARNING**: This command affects ALL groups!\n\nUse /cleangroup for safe, group-specific cleanup.')
+
       // Use the new smart cleanup function
       const { cleanupStaleGames } = await import('../utils/downtime-cleanup.ts')
       const result = await cleanupStaleGames()
@@ -218,7 +264,7 @@ export function handleAdminCommands(bot: Bot) {
         return
       }
 
-      let message = `✅ **Cleaned up ${result.cleaned} stale game(s):**\n\n`
+      let message = `✅ **Cleaned up ${result.cleaned} stale game(s) ACROSS ALL GROUPS:**\n\n`
 
       result.details.forEach(detail => {
         message += `• Group ${detail.id}: ${detail.reason} (${detail.age} min old)\n`
@@ -228,16 +274,76 @@ export function handleAdminCommands(bot: Bot) {
 
       await ctx.reply(message, { parse_mode: 'Markdown' })
 
-      logger.info('Admin triggered smart stale cleanup', {
+      logger.warn('Admin triggered CROSS-GROUP stale cleanup', {
         userId: ctx.from?.id,
         cleaned: result.cleaned,
         details: result.details,
-        remaining: gameState.size
+        remaining: gameState.size,
+        warning: 'CROSS_GROUP_CLEANUP_PERFORMED'
       })
     } catch (error) {
       await ctx.reply(`❌ Cleanup failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
       logger.error('Admin game cleanup failed', {
         userId: ctx.from?.id,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    }
+  })
+
+  // NEW: Safe group-specific cleanup command
+  bot.command('cleangroup', async (ctx) => {
+    await updateAdminList(ctx)
+    if (!ctx.from || !isAdmin(ctx.from.id)) {
+      await ctx.reply('❌ Admin access required')
+      return
+    }
+
+    // Only works in group chats
+    if (ctx.chat.type === 'private') {
+      await ctx.reply('❌ This command only works in group chats')
+      return
+    }
+
+    const groupChatId = ctx.chat.id
+
+    try {
+      const game = gameState.get(groupChatId)
+
+      if (!game) {
+        await ctx.reply('📭 No game found for this group')
+        return
+      }
+
+      const ageMinutes = Math.floor((Date.now() - game.createdAt.getTime()) / (60 * 1000))
+      const ageHours = Math.floor(ageMinutes / 60)
+
+      // Remove the game
+      gameState.delete(groupChatId)
+
+      // Also remove from persistence
+      const persistenceManager = getPersistenceManager()
+      if (persistenceManager) {
+        try {
+          await persistenceManager.deleteGame(groupChatId)
+        } catch (error) {
+          logger.warn('Failed to delete game from persistence', { groupChatId, error })
+        }
+      }
+
+      await ctx.reply(`✅ **Cleaned this group's game:**\n\n• State: ${game.state}\n• Players: ${game.players.length}\n• Age: ${ageHours}h ${ageMinutes % 60}m\n\n📊 Safe group-specific cleanup completed`, { parse_mode: 'Markdown' })
+
+      logger.info('Admin performed safe group-specific cleanup', {
+        userId: ctx.from?.id,
+        groupChatId,
+        gameAge: ageMinutes,
+        gameState: game.state,
+        playerCount: game.players.length
+      })
+    } catch (error) {
+      await ctx.reply(`❌ Group cleanup failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      logger.error('Admin group cleanup failed', {
+        userId: ctx.from?.id,
+        groupChatId,
         error: error instanceof Error ? error.message : String(error)
       })
     }
