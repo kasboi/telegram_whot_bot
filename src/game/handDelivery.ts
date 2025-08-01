@@ -133,7 +133,7 @@ export async function notifyPrivateMessageRequired(
   if (failedDeliveries.length === 1) {
     const player = failedDeliveries[0]
     notificationMessage +=
-      `${player.playerName}, I couldn't send you your cards via private message!\n\n` +
+      `@${player.playerName}, I couldn't send you your cards via private message!\n\n` +
       `📱 **To play the game:**\n` +
       `1. Click here: @${botUsername}\n` +
       `2. Send /start to the bot\n` +
@@ -144,7 +144,7 @@ export async function notifyPrivateMessageRequired(
       `The following players need to start a private chat with me:\n\n`
 
     failedDeliveries.forEach((player, index) => {
-      notificationMessage += `${index + 1}. ${player.playerName}\n`
+      notificationMessage += `${index + 1}. @${player.playerName}\n`
     })
 
     notificationMessage +=

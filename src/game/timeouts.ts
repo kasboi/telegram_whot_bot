@@ -270,11 +270,16 @@ export class TimeoutManager {
           }
         }
 
-        // Start timeout for next player if game is still in progress
+        // Check if the game ended
         const updatedGame = getGame(gameId)
-        if (updatedGame && updatedGame.state === 'in_progress') {
-          const nextPlayer = updatedGame.players[updatedGame.currentPlayerIndex!]
-          this.startTurnTimeout(gameId, nextPlayer.id)
+        if (updatedGame && updatedGame.state === 'ended') {
+            // Game over, no more timeouts
+            logger.info('Game ended due to timeout during sudden death, not starting new timer', { gameId, playerId });
+            // Optionally, you can send a final game over message here if drawCard doesn't already.
+        } else if (updatedGame && updatedGame.state === 'in_progress') {
+            // Start timeout for next player
+            const nextPlayer = updatedGame.players[updatedGame.currentPlayerIndex!]
+            this.startTurnTimeout(gameId, nextPlayer.id)
         }
       } else {
         logger.warn('Failed to auto-draw on turn timeout', { gameId, playerId, error: result.message })

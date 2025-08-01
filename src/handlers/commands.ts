@@ -6,6 +6,7 @@ import { generateGroupStatusMessage } from "./updates.ts"
 import { safeAnswerCallbackQuery } from '../utils/callback.ts'
 import { getTimeoutManager } from '../game/timeouts.ts'
 import { deliverAllPlayerHands, notifyPrivateMessageRequired } from '../game/handDelivery.ts'
+import { isAdmin } from '../utils/auth.ts'
 
 async function updateLobbyMessage(ctx: Context, groupChatId: number) {
     const game = getGame(groupChatId)
@@ -315,16 +316,42 @@ export function handleMyCards(bot: Bot) {
     })
 }
 
+// import { isAdmin } from "../utils/auth.ts";
+
 export function handleHelp(bot: Bot) {
+
     bot.command('help', async (ctx: Context) => {
-        const helpMessage = `
+        let helpMessage = `
 🎴 **Welcome to Whot Game Bot!** 🎴
 
 Here are the available commands:
 - **/startgame**: Start a new game in a group chat.
 - **/mycards**: Get your current hand of cards in a private message.
 - **/help**: Show this help message.
+- **/howtoplay**: Learn the rules of Whot.
+`
+        if (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup") {
 
+            const getAdmin = await ctx.getChatAdministrators()
+            const userIsAdmin = getAdmin.some(admin => admin.user.id === ctx.from?.id)
+
+            if (userIsAdmin) {
+                helpMessage += `
+            
+            *Admin Commands:*
+            - **/setgamestate <players> <deck> <reshuffles>**: Set the game state for testing.
+            - **/sim_start <num_players>**: Start a simulation.
+            - **/sim_status**: View the simulation status.
+            - **/sim_set <target> <value>**: Set simulation state.
+            - **/sim_action <action> <params>**: Perform a simulation action.
+            - **/sim_end**: End the simulation.
+            `
+            }
+
+        }
+
+
+        helpMessage += `
 **How to Play:**
 1. Add the bot to a group.
 2. Use **/startgame** to create a lobby.
@@ -332,6 +359,7 @@ Here are the available commands:
 4. The creator starts the game.
 5. Play your cards via private message with the bot!
 `
+
         await ctx.reply(helpMessage, { parse_mode: 'Markdown' })
     })
 }

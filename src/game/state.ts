@@ -3,6 +3,7 @@ import { logger } from '../utils/logger.ts'
 import { createDeck, dealCards, canPlayCardWithChosen, shuffleDeck } from './cards.ts'
 import { getCardEffect, canPlayDuringEffect } from './special.ts'
 import { PersistenceManager } from '../persistence/mod.ts'
+import { simulationGame } from '../handlers/simulation.ts';
 
 // Global game state storage (in-memory for MVP)
 export const gameState = new Map<number, GameSession>()
@@ -150,7 +151,7 @@ export function addPlayer(groupChatId: number, userId: number, firstName: string
   }
 
   // Check if player already joined
-  if (game.players.some(p => p.id === userId)) {
+  if (game.players.some((p: Player) => p.id === userId)) {
     logger.warn('Player already joined game', { groupChatId, userId })
     return false
   }
@@ -171,7 +172,7 @@ export function addPlayer(groupChatId: number, userId: number, firstName: string
     logger.info('Game state: ready_to_start', {
       groupChatId,
       totalPlayers: game.players.length,
-      players: game.players.map(p => p.firstName)
+      players: game.players.map((p: Player) => p.firstName)
     })
   }
 
@@ -185,7 +186,7 @@ export function addPlayer(groupChatId: number, userId: number, firstName: string
     userId,
     firstName,
     totalPlayers: game.players.length,
-    playersList: game.players.map(p => p.firstName)
+    playersList: game.players.map((p: Player) => p.firstName)
   })
 
   return true
@@ -238,7 +239,7 @@ export function getGameStats(): { totalGames: number; gameStates: Record<string,
  * Ensures the deck has enough cards, handling reshuffle and sudden death modes
  * Returns: {hasEnoughCards: boolean, reshuffledNow: boolean}
  */
-function ensureDeckHasCards(game: GameSession, cardsNeeded: number): { hasEnoughCards: boolean, reshuffledNow: boolean } {
+function ensureDeckHasCards(game: GameSession, cardsNeeded: number): { hasEnoughCards: boolean, reshuffledNow: boolean, gameEnded?: boolean, tenderResult?: { winner: Player; scores: { name: string; score: number }[] } } {
   if (game.deck!.length >= cardsNeeded) {
     return { hasEnoughCards: true, reshuffledNow: false }
   }
@@ -267,7 +268,23 @@ function ensureDeckHasCards(game: GameSession, cardsNeeded: number): { hasEnough
     logger.info('Sudden Death mode activated - no more drawing allowed', {
       groupChatId: game.id
     })
-    return { hasEnoughCards: false, reshuffledNow: false }
+
+    // Immediately end the game and determine the winner
+    const scores = game.players.map((p: Player) => ({
+      name: p.firstName,
+      score: calculateHandValue(p.hand || []),
+      player: p,
+    }));
+    scores.sort((a: { score: number }, b: { score: number }) => a.score - b.score);
+    game.winner = scores[0].player;
+    game.state = 'ended';
+
+    logger.info('Game ended by deck exhaustion (sudden death)', {
+      groupChatId: game.id,
+      winner: game.winner.firstName,
+    });
+
+    return { hasEnoughCards: false, reshuffledNow: false, gameEnded: true, tenderResult: { winner: game.winner, scores: scores.map((s: { name: string; score: number; }) => ({ name: s.name, score: s.score })) } };
   }
 
   // Still have some cards after first reshuffle
@@ -305,7 +322,7 @@ function reshuffleDeckFromDiscard(game: GameSession): void {
  * Safely draws cards for a player, respecting deck exhaustion rules
  * Returns: {cardsDrawn: number, reshuffledNow: boolean}
  */
-function safeDrawCards(game: GameSession, playerIndex: number, count: number): { cardsDrawn: number, reshuffledNow: boolean } {
+function safeDrawCards(game: GameSession, playerIndex: number, count: number): { cardsDrawn: number, reshuffledNow: boolean, gameEnded?: boolean, tenderResult?: { winner: Player; scores: { name: string; score: number }[] } } {
   if (game.suddenDeath) {
     logger.info('Draw request denied - Sudden Death mode active', {
       groupChatId: game.id,
@@ -316,6 +333,9 @@ function safeDrawCards(game: GameSession, playerIndex: number, count: number): {
   }
 
   const deckCheck = ensureDeckHasCards(game, count)
+  if (deckCheck.gameEnded) {
+    return { cardsDrawn: 0, reshuffledNow: false, gameEnded: true, tenderResult: deckCheck.tenderResult };
+  }
   if (!deckCheck.hasEnoughCards) {
     // Can only draw what's available
     count = game.deck!.length
@@ -378,7 +398,7 @@ export function startGameWithCards(groupChatId: number): boolean {
     cardsInDeck: remainingDeck.length,
     topCard: { id: discardPile[0]?.id, symbol: discardPile[0]?.symbol, number: discardPile[0]?.number },
     currentPlayer: game.players[0]?.firstName,
-    playerHands: game.players.map(p => ({ name: p.firstName, cardCount: p.hand?.length || 0 }))
+    playerHands: game.players.map((p: Player) => ({ name: p.firstName, cardCount: p.hand?.length || 0 }))
   })
 
   // Persist the game state with cards to KV storage
@@ -424,12 +444,12 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
   requiresSymbolChoice?: boolean
   reshuffled?: boolean
 } {
-  const game = gameState.get(groupChatId)
+  const game = (simulationGame && simulationGame.id === groupChatId) ? simulationGame : gameState.get(groupChatId);
   if (!game || game.state !== 'in_progress') {
     return { success: false, message: "No active game found" }
   }
 
-  const player = game.players.find(p => p.id === userId)
+  const player = game.players.find((p: Player) => p.id === userId)
   if (!player) {
     return { success: false, message: "Player not found in this game" }
   }
@@ -531,15 +551,24 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
 
       // Check if we can provide cards to all players
       const deckCheck = ensureDeckHasCards(game, playersNeedingCards)
+      if (deckCheck.gameEnded) {
+        return {
+          success: true,
+          message: '💀 Sudden Death! The deck ran out of cards.',
+          gameEnded: true,
+          winner: deckCheck.tenderResult?.winner,
+          reshuffled: false,
+        };
+      }
       if (!deckCheck.hasEnoughCards) {
         if (game.suddenDeath) {
           // Sudden death mode triggered - end game
-          const scores = game.players.map((p) => ({
+          const scores = game.players.map((p: Player) => ({
             name: p.firstName,
             score: calculateHandValue(p.hand || []),
             player: p,
           }))
-          scores.sort((a, b) => a.score - b.score)
+          scores.sort((a: { score: number }, b: { score: number }) => a.score - b.score)
           game.winner = scores[0].player
           game.state = 'ended'
           logger.info('Game ended by General Market sudden death', { groupChatId, winner: game.winner.firstName })
@@ -554,6 +583,15 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
       for (let i = 0; i < game.players.length; i++) {
         if (i !== game.currentPlayerIndex) {
           const drawResult = safeDrawCards(game, i, 1)
+          if (drawResult.gameEnded) {
+            return {
+              success: true,
+              message: '💀 Sudden Death! The deck ran out of cards.',
+              gameEnded: true,
+              winner: drawResult.tenderResult?.winner,
+              reshuffled: false,
+            };
+          }
           if (drawResult.cardsDrawn > 0) {
             playersWhoGotCards.push(game.players[i].firstName)
           }
@@ -593,7 +631,7 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
     logger.info('Game ended', {
       groupChatId,
       winner: player.firstName,
-      finalPlayerCounts: game.players.map(p => ({ name: p.firstName, cards: p.hand?.length || 0 })),
+      finalPlayerCounts: game.players.map((p: Player) => ({ name: p.firstName, cards: p.hand?.length || 0 })),
       totalTurns: game.playedCards?.length || 0
     })
     return { success: true, message: `${player.firstName} wins!`, gameEnded: true, winner: player, reshuffled: reshuffledDuringPlay }
@@ -642,12 +680,12 @@ export function drawCard(groupChatId: number, userId: number): {
   reshuffled?: boolean
   tenderResult?: { winner: Player; scores: { name: string; score: number }[] }
 } {
-  const game = gameState.get(groupChatId)
+  const game = (simulationGame && simulationGame.id === groupChatId) ? simulationGame : gameState.get(groupChatId);
   if (!game || game.state !== 'in_progress') {
     return { success: false, message: 'No active game found' }
   }
 
-  const player = game.players.find((p) => p.id === userId)
+  const player = game.players.find((p: Player) => p.id === userId)
   if (!player) {
     return { success: false, message: 'Player not found in this game' }
   }
@@ -664,14 +702,23 @@ export function drawCard(groupChatId: number, userId: number): {
     // For penalty effects, ensure we have enough cards by forcing reshuffle if needed
     const deckCheck = ensureDeckHasCards(game, cardsToDraw)
 
+    if (deckCheck.gameEnded) {
+      return {
+        success: true,
+        message: '💀 Sudden Death! The deck ran out of cards.',
+        gameEnded: true,
+        tenderResult: deckCheck.tenderResult,
+      };
+    }
+
     if (!deckCheck.hasEnoughCards && game.suddenDeath) {
       // Game ends in sudden death if we can't fulfill penalty draw
-      const scores = game.players.map((p) => ({
+      const scores = game.players.map((p: Player) => ({
         name: p.firstName,
         score: calculateHandValue(p.hand || []),
         player: p,
       }))
-      scores.sort((a, b) => a.score - b.score)
+      scores.sort((a: { score: number }, b: { score: number }) => a.score - b.score)
       game.winner = scores[0].player
       game.state = 'ended'
       logger.info('Game ended by sudden death during penalty draw', { groupChatId, winner: game.winner.firstName })
@@ -679,7 +726,7 @@ export function drawCard(groupChatId: number, userId: number): {
         success: true,
         message: '💀 Sudden Death! Game ended during penalty draw',
         gameEnded: true,
-        tenderResult: { winner: game.winner, scores: scores.map(s => ({ name: s.name, score: s.score })) }
+        tenderResult: { winner: game.winner, scores: scores.map((s: { name: string; score: number; }) => ({ name: s.name, score: s.score })) }
       }
     }
 
@@ -715,14 +762,23 @@ export function drawCard(groupChatId: number, userId: number): {
   }  // Normal card draw
   const drawResult = safeDrawCards(game, playerIndex, 1)
 
+  if (drawResult.gameEnded) {
+    return {
+      success: true,
+      message: '💀 Sudden Death! The deck ran out of cards.',
+      gameEnded: true,
+      tenderResult: drawResult.tenderResult,
+    };
+  }
+
   // Check if game ended due to sudden death
   if (game.suddenDeath && drawResult.cardsDrawn === 0) {
-    const scores = game.players.map((p) => ({
+    const scores = game.players.map((p: Player) => ({
       name: p.firstName,
       score: calculateHandValue(p.hand || []),
       player: p,
     }))
-    scores.sort((a, b) => a.score - b.score)
+    scores.sort((a: { score: number }, b: { score: number }) => a.score - b.score)
     game.winner = scores[0].player
     game.state = 'ended'
     logger.info('Game ended by sudden death during normal draw', { groupChatId, winner: game.winner.firstName })
@@ -730,7 +786,7 @@ export function drawCard(groupChatId: number, userId: number): {
       success: true,
       message: '💀 Sudden Death! No more cards available',
       gameEnded: true,
-      tenderResult: { winner: game.winner, scores: scores.map(s => ({ name: s.name, score: s.score })) }
+      tenderResult: { winner: game.winner, scores: scores.map((s: { name: string; score: number; }) => ({ name: s.name, score: s.score })) }
     }
   }
 
@@ -758,7 +814,7 @@ export function selectWhotSymbol(groupChatId: number, userId: number, selectedSy
     return { success: false, message: "No active game found" }
   }
 
-  const player = game.players.find(p => p.id === userId)
+  const player = game.players.find((p: Player) => p.id === userId)
   if (!player) {
     return { success: false, message: "Player not found in this game" }
   }
@@ -807,7 +863,7 @@ export function removePlayer(groupChatId: number, userId: number): { success: bo
     return { success: false, gameCancelled: false }
   }
 
-  const playerIndex = game.players.findIndex(p => p.id === userId)
+  const playerIndex = game.players.findIndex((p: Player) => p.id === userId)
   if (playerIndex === -1) {
     return { success: false, gameCancelled: false }
   }

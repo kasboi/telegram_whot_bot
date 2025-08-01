@@ -2,6 +2,7 @@ import { Bot, Context } from 'https://deno.land/x/grammy@v1.37.0/mod.ts'
 import { handleStartGame, handleCallbackQuery, handleMyCards, handleHelp, handleHowToPlay } from './handlers/commands.ts'
 import { handleCardPlay, handleDrawCard, handleSymbolSelection } from './handlers/private.ts'
 import { handleAdminCommands } from './handlers/admin.ts'
+import { simStartCommand, simStatusCommand, simSetCommand, simActionCommand, simEndCommand } from './handlers/simulation.ts'
 import { logger } from './utils/logger.ts'
 import { initPersistence } from './game/state.ts'
 import { notifyBotRestartWithContext } from './utils/restart-notification.ts'
@@ -55,6 +56,11 @@ handleHowToPlay(bot)
 
 // Register admin commands
 handleAdminCommands(bot)
+bot.command("sim_start", simStartCommand)
+bot.command("sim_status", simStatusCommand)
+bot.command("sim_set", simSetCommand)
+bot.command("sim_action", simActionCommand)
+bot.command("sim_end", simEndCommand)
 
 // Register private chat handlers
 handleCardPlay(bot)
@@ -74,7 +80,7 @@ bot.command('start', async (ctx) => {
     logger.info('Start command in private chat', { userId: ctx.from?.id })
   } else {
     await ctx.reply(
-      '🎴 Whot Game Bot is ready! 🎴\n\n' +
+      '🎴 Whot Game Bot is ready! _n\n' +
       '🚀 Use /startgame to create a new game in this group!'
     )
     logger.info('Start command in group chat', { chatId: ctx.chat.id })
