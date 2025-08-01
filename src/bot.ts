@@ -1,4 +1,4 @@
-import { Bot } from 'https://deno.land/x/grammy@v1.37.0/mod.ts'
+import { Bot, Context } from 'https://deno.land/x/grammy@v1.37.0/mod.ts'
 import { handleStartGame, handleCallbackQuery, handleMyCards, handleHelp, handleHowToPlay } from './handlers/commands.ts'
 import { handleCardPlay, handleDrawCard, handleSymbolSelection } from './handlers/private.ts'
 import { handleAdminCommands } from './handlers/admin.ts'
@@ -11,6 +11,9 @@ import { checkDowntimeAndCleanup, recordShutdownTime } from './utils/downtime-cl
 import "jsr:@std/dotenv/load"
 import { jsonLogger } from "./utils/logger.json.ts"
 
+// Define custom context type
+export type MyContext = Context
+
 // Get bot token from environment
 const botToken = Deno.env.get('TELEGRAM_BOT_TOKEN')
 
@@ -21,7 +24,7 @@ if (!botToken) {
 }
 
 // Create bot instance
-export const bot = new Bot(botToken)
+export const bot = new Bot<MyContext>(botToken)
 
 // Add debug logging for all callback queries
 bot.on('callback_query', async (ctx, next) => {
