@@ -108,6 +108,10 @@ export async function initBot() {
     // Initialize timeout manager
     initTimeoutManager(bot)
 
+    // Start periodic stale game cleanup
+    const { startPeriodicCleanup } = await import('./utils/downtime-cleanup.ts')
+    startPeriodicCleanup()
+
     await setupBotCommands()
     logger.info('Whot Game Bot initialized for webhook mode')
     jsonLogger.info('Whot Game Bot initialized for webhook mode')

@@ -209,30 +209,29 @@ export function handleAdminCommands(bot: Bot) {
     }
 
     try {
-      let cleaned = 0
-      const staleCutoff = Date.now() - (24 * 60 * 60 * 1000) // 24 hours ago
+      // Use the new smart cleanup function
+      const { cleanupStaleGames } = await import('../utils/downtime-cleanup.ts')
+      const result = await cleanupStaleGames()
 
-      for (const [groupChatId, game] of gameState.entries()) {
-        // Clean up games that are stale (old and not in progress)
-        const isStale = game.createdAt.getTime() < staleCutoff
-        const isNotActive = game.state === 'waiting_for_players' || game.state === 'ready_to_start'
-
-        if (isStale && isNotActive) {
-          clearGame(groupChatId)
-          cleaned++
-          logger.info('Admin cleaned stale game', { groupChatId, state: game.state, age: Date.now() - game.createdAt.getTime() })
-        }
+      if (result.cleaned === 0) {
+        await ctx.reply('📭 No stale games found to clean')
+        return
       }
 
-      const message = cleaned > 0
-        ? `✅ Cleaned up ${cleaned} stale game(s)`
-        : `📭 No stale games found to clean`
+      let message = `✅ **Cleaned up ${result.cleaned} stale game(s):**\n\n`
 
-      await ctx.reply(message)
+      result.details.forEach(detail => {
+        message += `• Group ${detail.id}: ${detail.reason} (${detail.age} min old)\n`
+      })
 
-      logger.info('Admin cleaned stale games', {
+      message += `\n📊 Remaining games: ${gameState.size}`
+
+      await ctx.reply(message, { parse_mode: 'Markdown' })
+
+      logger.info('Admin triggered smart stale cleanup', {
         userId: ctx.from?.id,
-        cleaned,
+        cleaned: result.cleaned,
+        details: result.details,
         remaining: gameState.size
       })
     } catch (error) {
