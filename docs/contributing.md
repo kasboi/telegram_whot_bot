@@ -117,7 +117,6 @@ That's it! You've successfully added a new command.
 The primary tool for debugging is the logger. The bot uses two loggers:
 
 - **`logger`**: Writes plain text logs to `bot.log`.
-- **`jsonLogger`**: Writes structured JSON logs to `bot.log.json`.
 
 When you encounter a bug, follow these steps:
 

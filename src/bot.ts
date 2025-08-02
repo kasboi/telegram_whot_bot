@@ -11,7 +11,6 @@ import { checkDowntimeAndCleanup, recordShutdownTime } from './utils/downtime-cl
 import { safeExit, getEnvironmentInfo } from './utils/environment.ts'
 
 import "jsr:@std/dotenv/load"
-import { jsonLogger } from "./utils/logger.json.ts"
 
 // Define custom context type
 export type MyContext = Context
@@ -130,7 +129,6 @@ export async function initBot() {
 
     await setupBotCommands()
     logger.info('Whot Game Bot initialized for webhook mode')
-    jsonLogger.info('Whot Game Bot initialized for webhook mode')
 
     // Notify active games that bot has restarted (only if not cleaned up)
     if (!wasLongDowntime) {
