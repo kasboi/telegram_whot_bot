@@ -257,6 +257,41 @@ export class TimeoutManager {
 
         await this.bot.api.sendMessage(gameId, timeoutMessage, { parse_mode: 'Markdown' })
 
+        // Check if the game ended with tender mode
+        if (result.gameEnded && result.tenderResult) {
+          // Game ended with Tender Mode - send detailed results and stats
+          const { winner, scores, tie, tiedPlayers } = result.tenderResult
+          let tenderMessage = `🎯 **TENDER MODE!** 🎯\n\n`
+          tenderMessage += `The deck ran out! The game ends now. Lowest score wins.\n\n`
+          tenderMessage += `**Final Scores:**\n`
+          scores.forEach(s => {
+            tenderMessage += `• ${s.name}: **${s.score}** points\n`
+          })
+
+          if (tie && tiedPlayers) {
+            tenderMessage += `\n🤝 **It's a TIE!** 🤝\n`
+            tenderMessage += `Winners: **${tiedPlayers.join(', ')}**!`
+          } else if (winner) {
+            tenderMessage += `\n🏆 The winner is **${winner.firstName}**!`
+          } else {
+            tenderMessage += `\n🏆 Game completed!`
+          }
+
+          await this.bot.api.sendMessage(gameId, tenderMessage, { parse_mode: 'Markdown' })
+
+          // Send game stats to all players
+          const { sendGameStats } = await import('../handlers/stats.ts')
+          const updatedGame = getGame(gameId)
+          if (updatedGame) {
+            await sendGameStats(this.bot, updatedGame)
+          }
+
+          // Clean up ended game from storage
+          clearGame(gameId)
+          logger.info('Game ended due to timeout triggering tender mode', { gameId, playerId })
+          return
+        }
+
         // Update all players' hands
         for (const player of game.players) {
           try {
@@ -270,16 +305,15 @@ export class TimeoutManager {
           }
         }
 
-        // Check if the game ended
+        // Check if the game ended (but not via tender mode)
         const updatedGame = getGame(gameId)
         if (updatedGame && updatedGame.state === 'ended') {
-            // Game over, no more timeouts
-            logger.info('Game ended due to timeout during sudden death, not starting new timer', { gameId, playerId });
-            // Optionally, you can send a final game over message here if drawCard doesn't already.
+          // Game over, no more timeouts
+          logger.info('Game ended due to timeout, not starting new timer', { gameId, playerId })
         } else if (updatedGame && updatedGame.state === 'in_progress') {
-            // Start timeout for next player
-            const nextPlayer = updatedGame.players[updatedGame.currentPlayerIndex!]
-            this.startTurnTimeout(gameId, nextPlayer.id)
+          // Start timeout for next player
+          const nextPlayer = updatedGame.players[updatedGame.currentPlayerIndex!]
+          this.startTurnTimeout(gameId, nextPlayer.id)
         }
       } else {
         logger.warn('Failed to auto-draw on turn timeout', { gameId, playerId, error: result.message })
