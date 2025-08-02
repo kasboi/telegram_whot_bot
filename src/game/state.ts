@@ -602,9 +602,9 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
     return { success: true, message: `${player.firstName} wins!`, gameEnded: true, winner: player, reshuffled: false }
   }
 
-  // Advance turn only if it's not a Hold On card
+  // Advance turn only if it's not a Hold On card or General Market
   let nextPlayer = ''
-  if (!effect || effect.type !== 'extra_turn') {
+  if (!effect || (effect.type !== 'extra_turn' && effect.type !== 'general_market')) {
     // If there's a pending effect and the next player must handle it
     if (game.pendingEffect && game.pendingEffect.type === 'pick_cards') {
       game.currentPlayerIndex = game.pendingEffect.targetPlayerIndex!
@@ -614,7 +614,7 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
     }
     nextPlayer = game.players[game.currentPlayerIndex].firstName
   } else {
-    nextPlayer = player.firstName // Same player keeps turn
+    nextPlayer = player.firstName // Same player keeps turn (Hold On or General Market)
   }
 
   logger.info('Card played', {
