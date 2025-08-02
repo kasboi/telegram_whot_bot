@@ -243,12 +243,6 @@ export function handleCardPlay(bot: Bot) {
     const timeoutManager = getTimeoutManager()
     timeoutManager.cancelTimer(`turn_${groupChatId}_${userId}`)
 
-    // Check if deck was reshuffled during card play (e.g., General Market)
-    if (result.reshuffled) {
-      const reshuffleMessage = `⚠️ **The deck ran out!** ⚠️\n\nThe discard pile has been shuffled to create a new deck.\n\nIf the deck runs out again, it's a **SUDDEN-DEATH SHOWDOWN!**`
-      await bot.api.sendMessage(groupChatId, reshuffleMessage, { parse_mode: 'Markdown' })
-    }
-
     // Prepare and store action message BEFORE updating hands
     const gameAfterPlay = getGame(groupChatId)
     if (gameAfterPlay) {
@@ -330,15 +324,23 @@ export function handleDrawCard(bot: Bot) {
     // --- Handle different draw outcomes ---
 
     if (result.gameEnded && result.tenderResult) {
-      // Game ended with a Sudden-Death Showdown
-      const { winner, scores } = result.tenderResult
-      let tenderMessage = `🚨 **SUDDEN-DEATH SHOWDOWN!** 🚨\n\n`
-      tenderMessage += `The deck ran out a second time! The game ends now. Lowest score wins.\n\n`
+      // Game ended with Tender Mode
+      const { winner, scores, tie, tiedPlayers } = result.tenderResult
+      let tenderMessage = `� **TENDER MODE!** �\n\n`
+      tenderMessage += `The deck ran out! The game ends now. Lowest score wins.\n\n`
       tenderMessage += `**Final Scores:**\n`
       scores.forEach(s => {
         tenderMessage += `• ${s.name}: **${s.score}** points\n`
       })
-      tenderMessage += `\n🏆 The winner is **${winner.firstName}**!`
+
+      if (tie && tiedPlayers) {
+        tenderMessage += `\n🤝 **It's a TIE!** 🤝\n`
+        tenderMessage += `Winners: **${tiedPlayers.join(', ')}**!`
+      } else if (winner) {
+        tenderMessage += `\n🏆 The winner is **${winner.firstName}**!`
+      } else {
+        tenderMessage += `\n🏆 Game completed!`
+      }
 
       await bot.api.sendMessage(groupChatId, tenderMessage, { parse_mode: 'Markdown' })
       await safeAnswerCallbackQuery(ctx, 'The game has ended!')
@@ -348,14 +350,8 @@ export function handleDrawCard(bot: Bot) {
       return
     }
 
-    if (result.reshuffled) {
-      // Deck was reshuffled
-      const reshuffleMessage = `⚠️ **The deck ran out!** ⚠️\n\nThe discard pile has been shuffled to create a new deck.\n\nIf the deck runs out again, it's a **SUDDEN-DEATH SHOWDOWN!**`
-      await bot.api.sendMessage(groupChatId, reshuffleMessage, { parse_mode: 'Markdown' })
-    }
-
     // Standard draw or penalty draw
-    const wasPenalty = result.message.includes('due to pending effect')
+    const wasPenalty = result.message.includes('due to penalty effect')
     if (wasPenalty) {
       const cardCount = result.message.match(/(\d+)/)?.[1] || '?'
       await safeAnswerCallbackQuery(ctx, `📥 Drew ${cardCount} cards (penalty)`)

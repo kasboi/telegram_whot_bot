@@ -3,6 +3,29 @@ import { GameSession } from '../types/game.ts'
 import { logger } from '../utils/logger.ts'
 
 /**
+ * Determines how the game ended based on winner's card count
+ */
+function getGameEndingType(game: GameSession): 'normal_win' | 'tender_mode' | 'timeout' {
+  // Check if winner has 0 cards (normal win by playing last card)
+  if (game.winner && game.winner.hand?.length === 0) {
+    return 'normal_win'
+  }
+
+  // If winner has cards, it ended in tender mode (deck exhaustion)
+  if (game.winner && game.winner.hand && game.winner.hand.length > 0) {
+    return 'tender_mode'
+  }
+
+  // If there's a tie, it's also tender mode
+  if (game.tieResult && game.tieResult.length > 1) {
+    return 'tender_mode'
+  }
+
+  // Default to timeout if we can't determine
+  return 'timeout'
+}
+
+/**
  * Calculates the game duration in a readable format.
  */
 function getGameDuration(startTime: Date): string {
@@ -13,24 +36,6 @@ function getGameDuration(startTime: Date): string {
     return `${minutes} minute${minutes > 1 ? 's' : ''}`
   }
   return `${seconds} second${seconds > 1 ? 's' : ''}`
-}
-
-/**
- * Determines how the game ended based on game state
- */
-function getGameEndingType(game: GameSession): 'normal_win' | 'sudden_death' | 'timeout' {
-  // Check if winner has 0 cards (normal win by playing last card)
-  if (game.winner && game.winner.hand?.length === 0) {
-    return 'normal_win'
-  }
-
-  // If sudden death flag is set or winner has cards, it's a showdown
-  if (game.suddenDeath || (game.winner && game.winner.hand && game.winner.hand.length > 0)) {
-    return 'sudden_death'
-  }
-
-  // Default to timeout if we can't determine
-  return 'timeout'
 }
 
 /**
@@ -72,8 +77,8 @@ export async function sendGameStats(bot: Bot, game: GameSession): Promise<void> 
         if (endingType === 'normal_win') {
           victoryMessage = '🏆 **PERFECT VICTORY!** 🏆\nYou played your last card and won!'
           cardStatusMessage = `• **Final cards:** ${finalCardCount} (Perfect!)`
-        } else if (endingType === 'sudden_death') {
-          victoryMessage = '🏆 **SHOWDOWN VICTORY!** 🏆\nYou had the lowest cards when the deck ran out!'
+        } else if (endingType === 'tender_mode') {
+          victoryMessage = '🏆 **TENDER MODE VICTORY!** 🏆\nYou had the lowest cards when the deck ran out!'
           cardStatusMessage = `• **Final cards:** ${finalCardCount} (Lowest count!)`
         } else {
           victoryMessage = '🏆 **VICTORY BY DEFAULT!** 🏆\nYou won due to game timeout!'
@@ -96,8 +101,8 @@ export async function sendGameStats(bot: Bot, game: GameSession): Promise<void> 
 
         if (endingType === 'normal_win') {
           gameEndContext = `${winner.firstName} played their last card`
-        } else if (endingType === 'sudden_death') {
-          gameEndContext = `${winner.firstName} had the fewest cards in the showdown`
+        } else if (endingType === 'tender_mode') {
+          gameEndContext = `${winner.firstName} had the fewest cards in tender mode`
         } else {
           gameEndContext = `${winner.firstName} won by default`
         }

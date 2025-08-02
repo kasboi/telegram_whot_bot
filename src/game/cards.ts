@@ -1,4 +1,6 @@
+
 import { Card, WhotSymbol } from '../types/game.ts'
+import { isProduction } from "../utils/environment.ts"
 
 // Official Whot deck composition per game rules
 const DECK_COMPOSITION = {
@@ -54,7 +56,7 @@ export function shuffleDeck(deck: Card[]): Card[] {
 }
 
 // Deal cards to players
-export function dealCards(deck: Card[], playerCount: number, cardsPerPlayer: number = 7): {
+export function dealCards(deck: Card[], playerCount: number, cardsPerPlayer: number = isProduction() ? 7 : 25): {
   playerHands: Card[][],
   remainingDeck: Card[],
   discardPile: Card[]

@@ -1,9 +1,9 @@
 import { GameSession, Player, Card } from '../types/game.ts'
 import { logger } from '../utils/logger.ts'
-import { createDeck, dealCards, canPlayCardWithChosen, shuffleDeck } from './cards.ts'
+import { createDeck, dealCards, canPlayCardWithChosen } from './cards.ts'
 import { getCardEffect, canPlayDuringEffect } from './special.ts'
 import { PersistenceManager } from '../persistence/mod.ts'
-import { simulationGame } from '../handlers/simulation.ts';
+import { simulationGame } from '../handlers/simulation.ts'
 
 // Global game state storage (in-memory for MVP)
 export const gameState = new Map<number, GameSession>()
@@ -113,8 +113,6 @@ export function createGame(groupChatId: number, creatorId: number, creatorName: 
     creatorId,
     players: [],
     createdAt: new Date(),
-    reshuffleCount: 0,
-    suddenDeath: false,
   }
 
   gameState.set(groupChatId, newGame)
@@ -236,108 +234,82 @@ export function getGameStats(): { totalGames: number; gameStates: Record<string,
 // ======================================
 
 /**
- * Ensures the deck has enough cards, handling reshuffle and sudden death modes
- * Returns: {hasEnoughCards: boolean, reshuffledNow: boolean}
+ * TENDER-ONLY MODE: Ensures deck has cards, triggers immediate tender if exhausted
+ * No reshuffling - game ends immediately when deck is empty
  */
-function ensureDeckHasCards(game: GameSession, cardsNeeded: number): { hasEnoughCards: boolean, reshuffledNow: boolean, gameEnded?: boolean, tenderResult?: { winner: Player; scores: { name: string; score: number }[] } } {
+function ensureDeckHasCards(game: GameSession, cardsNeeded: number): { hasEnoughCards: boolean, gameEnded?: boolean, tenderResult?: { winner?: Player; scores: { name: string; score: number }[]; tie?: boolean; tiedPlayers?: string[] } } {
   if (game.deck!.length >= cardsNeeded) {
-    return { hasEnoughCards: true, reshuffledNow: false }
+    return { hasEnoughCards: true }
   }
 
-  logger.info('Deck exhaustion detected', {
+  logger.info('Deck exhaustion detected - triggering immediate tender mode', {
     groupChatId: game.id,
     cardsInDeck: game.deck!.length,
     cardsNeeded,
-    reshuffleCount: game.reshuffleCount
+    mode: 'tender-only'
   })
 
-  // First exhaustion - attempt reshuffle
-  if (game.reshuffleCount === 0) {
-    reshuffleDeckFromDiscard(game)
-    game.reshuffleCount = 1
-    logger.info('First deck reshuffle completed', {
+  // TENDER-ONLY MODE: No reshuffling, immediate game end
+  const scores = game.players.map((p: Player) => ({
+    name: p.firstName,
+    score: calculateHandValue(p.hand || []),
+    player: p,
+  }))
+
+  scores.sort((a, b) => a.score - b.score)
+
+  // Handle ties - check if multiple players have the same lowest score
+  const lowestScore = scores[0].score
+  const winners = scores.filter(s => s.score === lowestScore)
+
+  if (winners.length > 1) {
+    // It's a tie/draw
+    game.state = 'ended'
+    game.tieResult = winners.map(w => w.player)
+    logger.info('Game ended by deck exhaustion - TIE GAME', {
       groupChatId: game.id,
-      newDeckSize: game.deck!.length
+      tiedPlayers: winners.map(w => w.name),
+      score: lowestScore
     })
-    return { hasEnoughCards: game.deck!.length >= cardsNeeded, reshuffledNow: true }
-  }
-
-  // Second exhaustion - enter sudden death mode
-  if (game.reshuffleCount === 1 && game.deck!.length === 0) {
-    game.suddenDeath = true
-    logger.info('Sudden Death mode activated - no more drawing allowed', {
-      groupChatId: game.id
-    })
-
-    // Immediately end the game and determine the winner
-    const scores = game.players.map((p: Player) => ({
-      name: p.firstName,
-      score: calculateHandValue(p.hand || []),
-      player: p,
-    }));
-    scores.sort((a: { score: number }, b: { score: number }) => a.score - b.score);
-    game.winner = scores[0].player;
-    game.state = 'ended';
-
-    logger.info('Game ended by deck exhaustion (sudden death)', {
+    return {
+      hasEnoughCards: false,
+      gameEnded: true,
+      tenderResult: {
+        scores: scores.map(s => ({ name: s.name, score: s.score })),
+        tie: true,
+        tiedPlayers: winners.map(w => w.name)
+      }
+    }
+  } else {
+    // Single winner
+    game.winner = scores[0].player
+    game.state = 'ended'
+    logger.info('Game ended by deck exhaustion - tender mode', {
       groupChatId: game.id,
       winner: game.winner.firstName,
-    });
-
-    return { hasEnoughCards: false, reshuffledNow: false, gameEnded: true, tenderResult: { winner: game.winner, scores: scores.map((s: { name: string; score: number; }) => ({ name: s.name, score: s.score })) } };
+      winningScore: lowestScore
+    })
+    return {
+      hasEnoughCards: false,
+      gameEnded: true,
+      tenderResult: {
+        winner: game.winner,
+        scores: scores.map(s => ({ name: s.name, score: s.score }))
+      }
+    }
   }
-
-  // Still have some cards after first reshuffle
-  return { hasEnoughCards: game.deck!.length >= cardsNeeded, reshuffledNow: false }
 }
 
 /**
- * Reshuffles discard pile back into deck, keeping top card
+ * TENDER-ONLY MODE: Safely draws cards for a player, triggers tender if deck exhausted
  */
-function reshuffleDeckFromDiscard(game: GameSession): void {
-  if (!game.discardPile || game.discardPile.length <= 1) {
-    logger.warn('Cannot reshuffle - discard pile too small', {
-      groupChatId: game.id,
-      discardPileSize: game.discardPile?.length || 0
-    })
-    return
-  }
-
-  // Keep the top card, reshuffle the rest
-  const topCard: Card = game.discardPile.pop()!
-  const cardsToReshuffle = [...game.discardPile]
-
-  // Shuffle and add to deck
-  game.deck = [...(game.deck || []), ...shuffleDeck(cardsToReshuffle)]
-  game.discardPile = [topCard]
-
-  logger.info('Deck reshuffled from discard pile', {
-    groupChatId: game.id,
-    cardsReshuffled: cardsToReshuffle.length,
-    newDeckSize: game.deck.length
-  })
-}
-
-/**
- * Safely draws cards for a player, respecting deck exhaustion rules
- * Returns: {cardsDrawn: number, reshuffledNow: boolean}
- */
-function safeDrawCards(game: GameSession, playerIndex: number, count: number): { cardsDrawn: number, reshuffledNow: boolean, gameEnded?: boolean, tenderResult?: { winner: Player; scores: { name: string; score: number }[] } } {
-  if (game.suddenDeath) {
-    logger.info('Draw request denied - Sudden Death mode active', {
-      groupChatId: game.id,
-      playerIndex,
-      requestedCards: count
-    })
-    return { cardsDrawn: 0, reshuffledNow: false } // No drawing allowed in sudden death
-  }
-
+function safeDrawCards(game: GameSession, playerIndex: number, count: number): { cardsDrawn: number, gameEnded?: boolean, tenderResult?: { winner?: Player; scores: { name: string; score: number }[]; tie?: boolean; tiedPlayers?: string[] } } {
   const deckCheck = ensureDeckHasCards(game, count)
   if (deckCheck.gameEnded) {
-    return { cardsDrawn: 0, reshuffledNow: false, gameEnded: true, tenderResult: deckCheck.tenderResult };
+    return { cardsDrawn: 0, gameEnded: true, tenderResult: deckCheck.tenderResult }
   }
   if (!deckCheck.hasEnoughCards) {
-    // Can only draw what's available
+    // Can only draw what's available before triggering tender
     count = game.deck!.length
     logger.info('Partial draw due to deck exhaustion', {
       groupChatId: game.id,
@@ -355,14 +327,14 @@ function safeDrawCards(game: GameSession, playerIndex: number, count: number): {
     }
   }
 
-  logger.info('Cards drawn safely', {
+  logger.info('Cards drawn in tender-only mode', {
     groupChatId: game.id,
     playerIndex,
     cardsDrawn: drawn,
     remainingInDeck: game.deck!.length
   })
 
-  return { cardsDrawn: drawn, reshuffledNow: deckCheck.reshuffledNow }
+  return { cardsDrawn: drawn }
 }
 
 // Stage 2: Start the actual game with cards
@@ -444,7 +416,7 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
   requiresSymbolChoice?: boolean
   reshuffled?: boolean
 } {
-  const game = (simulationGame && simulationGame.id === groupChatId) ? simulationGame : gameState.get(groupChatId);
+  const game = (simulationGame && simulationGame.id === groupChatId) ? simulationGame : gameState.get(groupChatId)
   if (!game || game.state !== 'in_progress') {
     return { success: false, message: "No active game found" }
   }
@@ -503,7 +475,6 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
   // Handle special card effects
   const effect = getCardEffect(cardToPlay)
   let effectDescription = ''
-  let reshuffledDuringPlay = false // Track if reshuffle occurred during this card play
 
   if (effect) {
     if (effect.type === 'pick_cards') {
@@ -547,37 +518,18 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
       // All other players draw one card using safe drawing
       const playersWhoGotCards = []
       const playersNeedingCards = game.players.length - 1
-      let marketReshuffled = false
 
-      // Check if we can provide cards to all players
+      // Check if we can provide cards to all players - trigger tender immediately if not
       const deckCheck = ensureDeckHasCards(game, playersNeedingCards)
       if (deckCheck.gameEnded) {
         return {
           success: true,
-          message: '💀 Sudden Death! The deck ran out of cards.',
+          message: '� Tender Mode! The deck ran out of cards during General Market.',
           gameEnded: true,
           winner: deckCheck.tenderResult?.winner,
           reshuffled: false,
-        };
-      }
-      if (!deckCheck.hasEnoughCards) {
-        if (game.suddenDeath) {
-          // Sudden death mode triggered - end game
-          const scores = game.players.map((p: Player) => ({
-            name: p.firstName,
-            score: calculateHandValue(p.hand || []),
-            player: p,
-          }))
-          scores.sort((a: { score: number }, b: { score: number }) => a.score - b.score)
-          game.winner = scores[0].player
-          game.state = 'ended'
-          logger.info('Game ended by General Market sudden death', { groupChatId, winner: game.winner.firstName })
-          return { success: true, message: '💀 Sudden Death! Game ended during General Market', gameEnded: true, winner: game.winner, reshuffled: false }
         }
       }
-
-      // Track if reshuffle happened during this General Market
-      marketReshuffled = deckCheck.reshuffledNow
 
       // Safe drawing for each player
       for (let i = 0; i < game.players.length; i++) {
@@ -586,28 +538,18 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
           if (drawResult.gameEnded) {
             return {
               success: true,
-              message: '💀 Sudden Death! The deck ran out of cards.',
+              message: '� Tender Mode! The deck ran out of cards during General Market.',
               gameEnded: true,
               winner: drawResult.tenderResult?.winner,
               reshuffled: false,
-            };
+            }
           }
           if (drawResult.cardsDrawn > 0) {
             playersWhoGotCards.push(game.players[i].firstName)
           }
-          // Track any additional reshuffles during individual draws
-          if (drawResult.reshuffledNow) {
-            marketReshuffled = true
-          }
         }
       }
       effectDescription = `General Market - ${playersWhoGotCards.join(', ')} drew cards`
-
-      // Store reshuffle info for return
-      if (marketReshuffled) {
-        reshuffledDuringPlay = true
-        logger.info('General Market triggered deck reshuffle', { groupChatId, playersWhoGotCards })
-      }
     } else if (effect.type === 'choose_symbol') {
       effectDescription = 'Whot - Requires symbol selection'
 
@@ -620,7 +562,7 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
         requiresSymbolChoice: true
       })
 
-      return { success: true, message: `Played ${cardToPlay.symbol} ${cardToPlay.number}`, requiresSymbolChoice: true, reshuffled: reshuffledDuringPlay }
+      return { success: true, message: `Played ${cardToPlay.symbol} ${cardToPlay.number}`, requiresSymbolChoice: true, reshuffled: false }
     }
   }
 
@@ -634,7 +576,7 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
       finalPlayerCounts: game.players.map((p: Player) => ({ name: p.firstName, cards: p.hand?.length || 0 })),
       totalTurns: game.playedCards?.length || 0
     })
-    return { success: true, message: `${player.firstName} wins!`, gameEnded: true, winner: player, reshuffled: reshuffledDuringPlay }
+    return { success: true, message: `${player.firstName} wins!`, gameEnded: true, winner: player, reshuffled: false }
   }
 
   // Advance turn only if it's not a Hold On card
@@ -668,7 +610,7 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
   })
 
   const cardDescription = cardToPlay.number === 20 ? 'Whot' : `${cardToPlay.symbol} ${cardToPlay.number}`
-  return { success: true, message: `Played ${cardDescription}`, reshuffled: reshuffledDuringPlay }
+  return { success: true, message: `Played ${cardDescription}`, reshuffled: false }
 }
 
 // Draw a card from the deck
@@ -678,9 +620,9 @@ export function drawCard(groupChatId: number, userId: number): {
   cardDrawn?: Card
   gameEnded?: boolean
   reshuffled?: boolean
-  tenderResult?: { winner: Player; scores: { name: string; score: number }[] }
+  tenderResult?: { winner?: Player; scores: { name: string; score: number }[]; tie?: boolean; tiedPlayers?: string[] }
 } {
-  const game = (simulationGame && simulationGame.id === groupChatId) ? simulationGame : gameState.get(groupChatId);
+  const game = (simulationGame && simulationGame.id === groupChatId) ? simulationGame : gameState.get(groupChatId)
   if (!game || game.state !== 'in_progress') {
     return { success: false, message: 'No active game found' }
   }
@@ -699,100 +641,69 @@ export function drawCard(groupChatId: number, userId: number): {
   if (game.pendingEffect && game.pendingEffect.type === 'pick_cards') {
     const cardsToDraw = game.pendingEffect.amount
 
-    // For penalty effects, ensure we have enough cards by forcing reshuffle if needed
+    // For penalty effects, try to draw what's available, then trigger tender if needed
     const deckCheck = ensureDeckHasCards(game, cardsToDraw)
 
     if (deckCheck.gameEnded) {
       return {
         success: true,
-        message: '💀 Sudden Death! The deck ran out of cards.',
+        message: '� Tender Mode! The deck ran out of cards during penalty draw.',
         gameEnded: true,
         tenderResult: deckCheck.tenderResult,
-      };
-    }
-
-    if (!deckCheck.hasEnoughCards && game.suddenDeath) {
-      // Game ends in sudden death if we can't fulfill penalty draw
-      const scores = game.players.map((p: Player) => ({
-        name: p.firstName,
-        score: calculateHandValue(p.hand || []),
-        player: p,
-      }))
-      scores.sort((a: { score: number }, b: { score: number }) => a.score - b.score)
-      game.winner = scores[0].player
-      game.state = 'ended'
-      logger.info('Game ended by sudden death during penalty draw', { groupChatId, winner: game.winner.firstName })
-      return {
-        success: true,
-        message: '💀 Sudden Death! Game ended during penalty draw',
-        gameEnded: true,
-        tenderResult: { winner: game.winner, scores: scores.map((s: { name: string; score: number; }) => ({ name: s.name, score: s.score })) }
       }
     }
 
-    // Now draw the cards (should get full amount after reshuffle)
+    // Draw whatever cards are available (could be less than requested)
     const drawResult = safeDrawCards(game, playerIndex, cardsToDraw)
 
-    // Check if we still didn't get enough cards (shouldn't happen after reshuffle)
-    if (drawResult.cardsDrawn < cardsToDraw && !game.suddenDeath) {
-      logger.warn('Penalty draw incomplete despite reshuffle attempt', {
-        groupChatId,
-        requested: cardsToDraw,
-        drawn: drawResult.cardsDrawn,
-        deckSize: game.deck!.length
-      })
+    if (drawResult.gameEnded) {
+      return {
+        success: true,
+        message: '� Tender Mode! The deck ran out of cards during penalty draw.',
+        gameEnded: true,
+        tenderResult: drawResult.tenderResult,
+      }
     }
 
     game.pendingEffect = undefined
     game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
 
-    logger.info('Penalty cards drawn', { groupChatId, player: player.firstName, cardsDrawn: drawResult.cardsDrawn, newHandSize: player.hand!.length })
+    logger.info('Penalty cards drawn in tender mode', {
+      groupChatId,
+      player: player.firstName,
+      cardsDrawn: drawResult.cardsDrawn,
+      requested: cardsToDraw,
+      newHandSize: player.hand!.length
+    })
 
-    // Persist the state after clearing pending effect (CRITICAL for turn consistency)
+    // Persist the state after clearing pending effect
     saveGameToPersistence(game).catch(error => {
       logger.warn('Failed to persist penalty resolution state', { groupChatId, error })
     })
 
     return {
       success: true,
-      message: drawResult.cardsDrawn > 0 ? `Drew ${drawResult.cardsDrawn} cards due to penalty effect` : 'No cards available to draw',
+      message: drawResult.cardsDrawn > 0 ? `Drew ${drawResult.cardsDrawn} cards due to penalty effect` : 'No cards available to draw - triggering tender',
       cardDrawn: drawResult.cardsDrawn > 0 ? player.hand![player.hand!.length - 1] : undefined,
-      reshuffled: drawResult.reshuffledNow || deckCheck.reshuffledNow,
+      reshuffled: false, // No more reshuffling in tender-only mode
     }
-  }  // Normal card draw
+  }
+
+  // Normal card draw
   const drawResult = safeDrawCards(game, playerIndex, 1)
 
   if (drawResult.gameEnded) {
     return {
       success: true,
-      message: '💀 Sudden Death! The deck ran out of cards.',
+      message: '� Tender Mode! The deck ran out of cards.',
       gameEnded: true,
       tenderResult: drawResult.tenderResult,
-    };
-  }
-
-  // Check if game ended due to sudden death
-  if (game.suddenDeath && drawResult.cardsDrawn === 0) {
-    const scores = game.players.map((p: Player) => ({
-      name: p.firstName,
-      score: calculateHandValue(p.hand || []),
-      player: p,
-    }))
-    scores.sort((a: { score: number }, b: { score: number }) => a.score - b.score)
-    game.winner = scores[0].player
-    game.state = 'ended'
-    logger.info('Game ended by sudden death during normal draw', { groupChatId, winner: game.winner.firstName })
-    return {
-      success: true,
-      message: '💀 Sudden Death! No more cards available',
-      gameEnded: true,
-      tenderResult: { winner: game.winner, scores: scores.map((s: { name: string; score: number; }) => ({ name: s.name, score: s.score })) }
     }
   }
 
   game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
 
-  logger.info('Card drawn', { groupChatId, player: player.firstName, newHandSize: player.hand!.length })
+  logger.info('Card drawn in tender mode', { groupChatId, player: player.firstName, newHandSize: player.hand!.length })
 
   // Persist the updated game state
   saveGameToPersistence(game).catch(error => {
@@ -803,7 +714,7 @@ export function drawCard(groupChatId: number, userId: number): {
     success: true,
     message: drawResult.cardsDrawn > 0 ? 'Drew a card' : 'No cards available to draw',
     cardDrawn: drawResult.cardsDrawn > 0 ? player.hand![player.hand!.length - 1] : undefined,
-    reshuffled: drawResult.reshuffledNow
+    reshuffled: false // No more reshuffling in tender-only mode
   }
 }
 
