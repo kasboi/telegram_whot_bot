@@ -104,15 +104,16 @@ export function canPlayCard(cardToPlay: Card, topCard: Card): boolean {
 
 // Check if a card can be played considering chosen Whot symbol
 export function canPlayCardWithChosen(cardToPlay: Card, topCard: Card, chosenSymbol?: string): boolean {
-  // If the top card is a Whot with a chosen symbol, only allow cards matching the chosen symbol
-  // (No Whot cards allowed immediately after a symbol choice)
+  // If the top card is a Whot with a chosen symbol, allow:
+  // 1. Cards matching the chosen symbol
+  // 2. Other Whot cards (to counter the Whot)
   if (topCard.symbol === 'whot' && chosenSymbol) {
-    return cardToPlay.symbol === chosenSymbol
+    return cardToPlay.symbol === chosenSymbol || cardToPlay.symbol === 'whot'
   }
 
-  // Whot cards can be played only when there's no active chosen symbol
+  // Whot cards can always be played (as wild cards or counters)
   if (cardToPlay.symbol === 'whot') {
-    return !chosenSymbol // Can only play Whot if no symbol is currently chosen
+    return true
   }
 
   // Regular cards: must match symbol or number
