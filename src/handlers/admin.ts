@@ -119,10 +119,15 @@ export function handleAdminCommands(bot: Bot) {
       let gamesList = '🎮 **Active Games:**\n\n'
 
       for (const [groupChatId, game] of gameState.entries()) {
-        gamesList += `**Group ${groupChatId}:**\n`
-        gamesList += `• State: ${game.state}\n`
+        // Escape special characters in dynamic content
+        const escapedGroupId = String(groupChatId).replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&')
+        const escapedDate = game.createdAt.toLocaleString().replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&')
+        const escapedState = game.state.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&')
+
+        gamesList += `**Group ${escapedGroupId}:**\n`
+        gamesList += `• State: ${escapedState}\n`
         gamesList += `• Players: ${game.players.length}\n`
-        gamesList += `• Created: ${game.createdAt.toLocaleString()}\n\n`
+        gamesList += `• Created: ${escapedDate}\n\n`
       }
 
       await ctx.reply(gamesList, { parse_mode: 'Markdown' })
@@ -330,7 +335,7 @@ export function handleAdminCommands(bot: Bot) {
         }
       }
 
-      await ctx.reply(`✅ **Cleaned this group's game:**\n\n• State: ${game.state}\n• Players: ${game.players.length}\n• Age: ${ageHours}h ${ageMinutes % 60}m\n\n📊 Safe group-specific cleanup completed`, { parse_mode: 'Markdown' })
+      await ctx.reply(`✅ **Cleaned this group's game:**\n\n• State: ${game.state.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&')}\n• Players: ${game.players.length}\n• Age: ${ageHours}h ${ageMinutes % 60}m\n\n📊 Safe group-specific cleanup completed`, { parse_mode: 'Markdown' })
 
       logger.info('Admin performed safe group-specific cleanup', {
         userId: ctx.from?.id,
