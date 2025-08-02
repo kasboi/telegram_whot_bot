@@ -547,7 +547,7 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
       if (deckCheck.gameEnded) {
         return {
           success: true,
-          message: '� Tender Mode! The deck ran out of cards during General Market.',
+          message: '🎯 Tender Mode! The deck ran out of cards during General Market.',
           gameEnded: true,
           winner: deckCheck.tenderResult?.winner,
           reshuffled: false,
@@ -561,7 +561,7 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
           if (drawResult.gameEnded) {
             return {
               success: true,
-              message: '� Tender Mode! The deck ran out of cards during General Market.',
+              message: '🎯 Tender Mode! The deck ran out of cards during General Market.',
               gameEnded: true,
               winner: drawResult.tenderResult?.winner,
               reshuffled: false,
@@ -670,7 +670,7 @@ export function drawCard(groupChatId: number, userId: number): {
     if (deckCheck.gameEnded) {
       return {
         success: true,
-        message: '� Tender Mode! The deck ran out of cards during penalty draw.',
+        message: '🎯 Tender Mode! The deck ran out of cards during penalty draw.',
         gameEnded: true,
         tenderResult: deckCheck.tenderResult,
       }
@@ -682,7 +682,7 @@ export function drawCard(groupChatId: number, userId: number): {
     if (drawResult.gameEnded) {
       return {
         success: true,
-        message: '� Tender Mode! The deck ran out of cards during penalty draw.',
+        message: '🎯 Tender Mode! The deck ran out of cards during penalty draw.',
         gameEnded: true,
         tenderResult: drawResult.tenderResult,
       }
@@ -718,7 +718,7 @@ export function drawCard(groupChatId: number, userId: number): {
   if (drawResult.gameEnded) {
     return {
       success: true,
-      message: '� Tender Mode! The deck ran out of cards.',
+      message: '🎯 Tender Mode! The deck ran out of cards.',
       gameEnded: true,
       tenderResult: drawResult.tenderResult,
     }

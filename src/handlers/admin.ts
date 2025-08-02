@@ -421,8 +421,10 @@ export function handleAdminCommands(bot: Bot) {
       // Notify players in the group chat that the game was terminated
       try {
         const adminName = ctx.from.first_name || 'Admin'
+        // Escape Markdown special characters in admin name
+        const escapedAdminName = adminName.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&')
         const terminationMessage = `🚨 **GAME TERMINATED BY ADMIN** 🚨\n\n` +
-          `The game has been forcefully ended by ${adminName}.\n` +
+          `The game has been forcefully ended by ${escapedAdminName}.\n` +
           `All players have been notified.`
 
         await bot.api.sendMessage(groupChatId, terminationMessage, { parse_mode: 'Markdown' })
@@ -451,7 +453,8 @@ export function handleAdminCommands(bot: Bot) {
       }
 
       // Store game info before clearing
-      const gameInfo = `${game.state} (${game.players.length} players: ${game.players.map(p => p.firstName).join(', ')})`
+      const playerNames = game.players.map(p => p.firstName.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&')).join(', ')
+      const gameInfo = `${game.state} (${game.players.length} players: ${playerNames})`
 
       // Clear the game
       clearGame(groupChatId)

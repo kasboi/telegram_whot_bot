@@ -40,22 +40,33 @@ export class TimeoutManager {
 
       const timerId = setTimeout(async () => {
         const game = getGame(gameId)
-        if (!game || game.state !== 'waiting_for_players') {
+        if (!game || (game.state !== 'waiting_for_players' && game.state !== 'ready_to_start')) {
           this.timers.delete(reminderKey)
           return
         }
 
         try {
           const playerCount = game.players.length
-          const message =
-            `⏰ **${secondsLeft} seconds remaining** to join the game!\n\n` +
-            `👥 Current players: ${playerCount}\n` +
-            `${game.players.map(p => `• ${p.firstName}`).join('\n')}\n\n` +
-            `${playerCount >= 2 ? '✅ Game will auto-start when timer expires' : '❌ Need at least 2 players or game will be cancelled'}`
+
+          // Different messages based on game state
+          let message: string
+          if (game.state === 'ready_to_start' && playerCount >= 2) {
+            message =
+              `⏰ **${secondsLeft} seconds remaining** until auto-start!\n\n` +
+              `👥 Players ready: ${playerCount}\n` +
+              `${game.players.map(p => `• ${p.firstName}`).join('\n')}\n\n` +
+              `✅ **Game will start automatically when timer expires!**`
+          } else {
+            message =
+              `⏰ **${secondsLeft} seconds remaining** to join the game!\n\n` +
+              `👥 Current players: ${playerCount}\n` +
+              `${game.players.map(p => `• ${p.firstName}`).join('\n')}\n\n` +
+              `${playerCount >= 2 ? '✅ Game will auto-start when timer expires' : '❌ Need at least 2 players or game will be cancelled'}`
+          }
 
           await this.bot.api.sendMessage(gameId, message, { parse_mode: 'Markdown' })
 
-          logger.debug('Lobby reminder sent', { gameId, secondsLeft, playerCount })
+          logger.debug('Lobby reminder sent', { gameId, secondsLeft, playerCount, gameState: game.state })
         } catch (error) {
           logger.warn('Failed to send lobby reminder', {
             gameId,
@@ -173,8 +184,8 @@ export class TimeoutManager {
   private async handleLobbyTimeout(gameId: number): Promise<void> {
     try {
       const game = getGame(gameId)
-      if (!game || game.state !== 'waiting_for_players') {
-        logger.debug('Lobby timeout ignored - game not in waiting state', { gameId })
+      if (!game || (game.state !== 'waiting_for_players' && game.state !== 'ready_to_start')) {
+        logger.debug('Lobby timeout ignored - game not in valid state', { gameId, gameState: game?.state })
         return
       }
 
@@ -182,7 +193,7 @@ export class TimeoutManager {
 
       if (playerCount >= 2) {
         // Auto-start the game
-        logger.info('Auto-starting game after lobby timeout', { gameId, playerCount })
+        logger.info('Auto-starting game after lobby timeout', { gameId, playerCount, gameState: game.state })
 
         const success = startGameWithCards(gameId)
         if (success) {

@@ -326,7 +326,7 @@ export function handleDrawCard(bot: Bot) {
     if (result.gameEnded && result.tenderResult) {
       // Game ended with Tender Mode
       const { winner, scores, tie, tiedPlayers } = result.tenderResult
-      let tenderMessage = `� **TENDER MODE!** �\n\n`
+      let tenderMessage = `🎯 **TENDER MODE!** 🎯\n\n`
       tenderMessage += `The deck ran out! The game ends now. Lowest score wins.\n\n`
       tenderMessage += `**Final Scores:**\n`
       scores.forEach(s => {
