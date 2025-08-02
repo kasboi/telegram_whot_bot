@@ -22,8 +22,8 @@ export class TimeoutManager {
   startLobbyTimeout(gameId: number): void {
     const timerKey = `lobby_${gameId}`
 
-    // Cancel existing timer if any
-    this.cancelTimer(timerKey)
+    // Cancel ALL existing timers for this game to prevent duplicates
+    this.cancelAllTimers(gameId)
 
     logger.info('Starting lobby timeout', {
       gameId,
@@ -31,15 +31,19 @@ export class TimeoutManager {
       reminders: 'every 15 seconds'
     })
 
-    // Schedule reminders every 15 seconds
+    // Schedule reminders sequentially to ensure proper order
     const reminderIntervals = [75, 60, 45, 30, 15] // seconds remaining
 
     reminderIntervals.forEach(secondsLeft => {
       const delay = (90 - secondsLeft) * 1000 // when to send reminder
+      const reminderKey = `reminder_${gameId}_${secondsLeft}`
 
-      setTimeout(async () => {
+      const timerId = setTimeout(async () => {
         const game = getGame(gameId)
-        if (!game || game.state !== 'waiting_for_players') return
+        if (!game || game.state !== 'waiting_for_players') {
+          this.timers.delete(reminderKey)
+          return
+        }
 
         try {
           const playerCount = game.players.length
@@ -59,7 +63,11 @@ export class TimeoutManager {
             error: error instanceof Error ? error.message : String(error)
           })
         }
+
+        this.timers.delete(reminderKey)
       }, delay)
+
+      this.timers.set(reminderKey, timerId)
     })
 
     // Set main timeout for 90 seconds

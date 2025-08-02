@@ -204,6 +204,29 @@ export function clearGame(groupChatId: number): boolean {
     return false
   }
 
+  // Cancel all timers for this game before clearing (non-blocking)
+  try {
+    // Use dynamic import to avoid circular dependency issues
+    import('./timeouts.ts').then(({ getTimeoutManager }) => {
+      try {
+        const timeoutManager = getTimeoutManager()
+        timeoutManager.cancelAllTimers(groupChatId)
+        logger.debug('Cancelled all timers for game', { groupChatId })
+      } catch (error) {
+        logger.debug('Timeout manager not available during game clear', { groupChatId })
+      }
+    }).catch(() => {
+      // Ignore import errors - timeout manager might not be available
+      logger.debug('Could not import timeout manager during game clear', { groupChatId })
+    })
+  } catch (error) {
+    // Ignore any errors - game clearing should not fail due to timer issues
+    logger.debug('Timer cancellation failed during game clear', {
+      groupChatId,
+      error: error instanceof Error ? error.message : String(error)
+    })
+  }
+
   gameState.delete(groupChatId)
 
   // Also delete from persistence
