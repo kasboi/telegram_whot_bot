@@ -55,3 +55,5 @@ bot.log.json
 # Sensitive test files with API keys
 test.http
 *.http
+rose_settings.json
+rose.txt
