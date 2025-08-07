@@ -3,7 +3,6 @@ import { logger } from '../utils/logger.ts'
 import { createDeck, dealCards, canPlayCardWithChosen } from './cards.ts'
 import { getCardEffect, canPlayDuringEffect } from './special.ts'
 import { PersistenceManager } from '../persistence/mod.ts'
-import { simulationGame } from '../handlers/simulation.ts'
 
 // Global game state storage (in-memory for MVP)
 export const gameState = new Map<number, GameSession>()
@@ -212,7 +211,7 @@ export function clearGame(groupChatId: number): boolean {
         const timeoutManager = getTimeoutManager()
         timeoutManager.cancelAllTimers(groupChatId)
         logger.debug('Cancelled all timers for game', { groupChatId })
-      } catch (error) {
+      } catch (_error) {
         logger.debug('Timeout manager not available during game clear', { groupChatId })
       }
     }).catch(() => {
@@ -439,7 +438,7 @@ export function playCard(groupChatId: number, userId: number, cardIndex: number)
   requiresSymbolChoice?: boolean
   reshuffled?: boolean
 } {
-  const game = (simulationGame && simulationGame.id === groupChatId) ? simulationGame : gameState.get(groupChatId)
+  const game = gameState.get(groupChatId)
   if (!game || game.state !== 'in_progress') {
     return { success: false, message: "No active game found" }
   }
@@ -645,7 +644,7 @@ export function drawCard(groupChatId: number, userId: number): {
   reshuffled?: boolean
   tenderResult?: { winner?: Player; scores: { name: string; score: number }[]; tie?: boolean; tiedPlayers?: string[] }
 } {
-  const game = (simulationGame && simulationGame.id === groupChatId) ? simulationGame : gameState.get(groupChatId)
+  const game = gameState.get(groupChatId)
   if (!game || game.state !== 'in_progress') {
     return { success: false, message: 'No active game found' }
   }

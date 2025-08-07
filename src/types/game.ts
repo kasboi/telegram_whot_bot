@@ -59,5 +59,4 @@ export interface GameSession {
   tieResult?: Player[] // Multiple winners in case of tie
   lastActionMessage?: string // Latest game action announcement for private chats
   lastActionTime?: Date // Last time any game action occurred (for cleanup)
-  isSimulation?: boolean
 }

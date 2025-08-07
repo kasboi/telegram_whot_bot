@@ -6,7 +6,7 @@ import { generateGroupStatusMessage } from "./updates.ts"
 import { safeAnswerCallbackQuery } from '../utils/callback.ts'
 import { getTimeoutManager } from '../game/timeouts.ts'
 import { deliverAllPlayerHands, notifyPrivateMessageRequired } from '../game/handDelivery.ts'
-import { isAdmin } from '../utils/auth.ts'
+// import { isAdmin } from '../utils/auth.ts'
 
 async function updateLobbyMessage(ctx: Context, groupChatId: number) {
     const game = getGame(groupChatId)
@@ -330,25 +330,7 @@ Here are the available commands:
 - **/help**: Show this help message.
 - **/howtoplay**: Learn the rules of Whot.
 `
-        if (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup") {
 
-            const getAdmin = await ctx.getChatAdministrators()
-            const userIsAdmin = getAdmin.some(admin => admin.user.id === ctx.from?.id)
-
-            if (userIsAdmin) {
-                helpMessage += `
-            
-            *Admin Commands:*
-            - **/setgamestate <players> <deck> <reshuffles>**: Set the game state for testing.
-            - **/sim_start <num_players>**: Start a simulation.
-            - **/sim_status**: View the simulation status.
-            - **/sim_set <target> <value>**: Set simulation state.
-            - **/sim_action <action> <params>**: Perform a simulation action.
-            - **/sim_end**: End the simulation.
-            `
-            }
-
-        }
 
 
         helpMessage += `
@@ -372,6 +354,10 @@ export function handleHowToPlay(bot: Bot) {
 *THE GOAL*
 The goal is simple: be the first player to get rid of all the cards in your hand!
 
+If the deck runs out, the cards are tendered and the player with the least cards wins.
+
+*NOTE*: The star (⭐) card counts as double points!
+
 *GETTING STARTED*
 1. Add the bot to a group chat.
 2. Use **/startgame** to create a new game lobby.
@@ -388,8 +374,8 @@ The goal is simple: be the first player to get rid of all the cards in your hand
 Watch out for these special cards! They can change the game in an instant.
 
 1️⃣ **Hold On**: Play again immediately.
-2️⃣ **Pick Two**: The next player must draw 2 cards.
-5️⃣ **Pick Three**: The next player must draw 3 cards.
+2️⃣ **Pick Two**: The next player must draw 2 cards. This can be countered and stacked!
+5️⃣ **Pick Three**: The next player must draw 3 cards. This can be countered and stacked!
 8️⃣ **Suspension**: The next player's turn is skipped.
 1️⃣4️⃣ **General Market**: Every other player must draw 1 card.
 🃏 **Whot (20)**: This is a wild card! You can play it on any card. After playing it, you get to choose the symbol for the next player to follow.

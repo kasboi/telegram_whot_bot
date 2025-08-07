@@ -168,7 +168,7 @@ export class TimeoutManager {
    */
   cancelAllActiveTimers(): void {
     const timerCount = this.timers.size
-    this.timers.forEach((timerId, timerKey) => {
+    this.timers.forEach((timerId, _timerKey) => {
       clearTimeout(timerId)
     })
     this.timers.clear()

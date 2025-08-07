@@ -2,7 +2,6 @@ import { Bot, Context } from 'https://deno.land/x/grammy@v1.37.0/mod.ts'
 import { handleStartGame, handleCallbackQuery, handleMyCards, handleHelp, handleHowToPlay } from './handlers/commands.ts'
 import { handleCardPlay, handleDrawCard, handleSymbolSelection } from './handlers/private.ts'
 import { handleAdminCommands } from './handlers/admin.ts'
-import { simStartCommand, simStatusCommand, simSetCommand, simActionCommand, simEndCommand } from './handlers/simulation.ts'
 import { logger } from './utils/logger.ts'
 import { initPersistence } from './game/state.ts'
 import { notifyBotRestartWithContext } from './utils/restart-notification.ts'
@@ -55,11 +54,6 @@ handleHowToPlay(bot)
 
 // Register admin commands
 handleAdminCommands(bot)
-bot.command("sim_start", simStartCommand)
-bot.command("sim_status", simStatusCommand)
-bot.command("sim_set", simSetCommand)
-bot.command("sim_action", simActionCommand)
-bot.command("sim_end", simEndCommand)
 
 // Register private chat handlers
 handleCardPlay(bot)
@@ -94,11 +88,11 @@ bot.catch((err) => {
 // Set up bot commands that appear in the "/" menu
 async function setupBotCommands() {
   await bot.api.setMyCommands([
-    { command: 'start', description: 'Welcome message and bot info' },
     { command: 'startgame', description: 'Start a new Whot game (group chats only)' },
     { command: 'mycards', description: 'Get your cards in private message' },
     { command: 'help', description: 'Show help information' },
     { command: 'howtoplay', description: 'Learn how to play Whot' },
+    { command: 'adminhelp', description: 'Show this admin help message' },
     // Admin commands are not shown in public menu for security
   ])
   logger.info('Bot commands registered successfully')

@@ -7,29 +7,6 @@ import { CommandContext, Context } from "https://deno.land/x/grammy@v1.37.0/cont
  * Admin commands for game management and persistence monitoring
  */
 
-// List of admin users (replace with actual admin user IDs)
-const ADMIN_USERS = [
-  // Add your admin user IDs here
-  // Example: 123456789
-]
-
-const adminHelpMessage = `🔧 **Admin Commands:**
-
-**Game Management (Group Chats Only):**
-• \`/killgame\` - Terminate the ongoing game in current group with player notifications
-• \`/forcestart\` - Force start a ready game in current group
-• \`/cleangames\` - Clean up stale games (24+ hours old)
-
-**Monitoring (Any Chat):**
-• \`/persiststatus\` - Show persistence and memory status
-• \`/listgames\` - List all active games
-• \`/recovergames\` - Manually recover games from KV storage
-
-**Help:**
-• \`/adminhelp\` - Show this admin help message
-
-🔒 **Security Note:** Game management commands only work on the current group for security.`
-
 const ADMIN_IDS: number[] = [
   // Add admin user IDs here when needed
   // Example: 123456789, 
@@ -52,17 +29,37 @@ async function updateAdminList(ctx: CommandContext<Context>) {
 }
 
 
+// Admin middleware factory
+async function groupAdminMiddleware(ctx: Context, next: () => Promise<void>) {
+  // Check if user exists
+  if (!ctx.from) {
+    await ctx.reply('❌ User information not available')
+    return
+  }
+
+  // Update admin list first
+  if (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup") {
+    await updateAdminList(ctx as CommandContext<Context>)
+  } else {
+    await ctx.reply('❌ Admin commands can only be used in group chats')
+    return
+  }
+
+  // Check admin permissions
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.reply('❌ Admin access required')
+    return
+  }
+
+  // If all checks pass, proceed to the command handler
+  await next()
+}
+
+
 export function handleAdminCommands(bot: Bot) {
 
-  // Command to show persistence status
-  bot.command('persiststatus', async (ctx) => {
-    await updateAdminList(ctx)
-
-    if (!ctx.from || !isAdmin(ctx.from.id)) {
-      await ctx.reply('❌ Admin access required')
-      return
-    }
-
+  // Commands that work in any chat (monitoring)
+  bot.command('persiststatus', groupAdminMiddleware, async (ctx) => {
     try {
       const memoryGames = gameState.size
       const gameIds = Array.from(gameState.keys())
@@ -101,15 +98,7 @@ export function handleAdminCommands(bot: Bot) {
     }
   })
 
-  // Command to show active games
-  bot.command('listgames', async (ctx) => {
-    await updateAdminList(ctx)
-
-    if (!ctx.from || !isAdmin(ctx.from.id)) {
-      await ctx.reply('❌ Admin access required')
-      return
-    }
-
+  bot.command('listgames', groupAdminMiddleware, async (ctx) => {
     try {
       if (gameState.size === 0) {
         await ctx.reply('📭 No active games')
@@ -119,7 +108,6 @@ export function handleAdminCommands(bot: Bot) {
       let gamesList = '🎮 **Active Games:**\n\n'
 
       for (const [groupChatId, game] of gameState.entries()) {
-        // Escape special characters in dynamic content
         const escapedGroupId = String(groupChatId).replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&')
         const escapedDate = game.createdAt.toLocaleString().replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&')
         const escapedState = game.state.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&')
@@ -145,14 +133,80 @@ export function handleAdminCommands(bot: Bot) {
     }
   })
 
-  // Command to force start a specific game (for debugging)
-  bot.command('forcestart', async (ctx) => {
-    await updateAdminList(ctx)
-    if (!ctx.from || !isAdmin(ctx.from.id)) {
-      await ctx.reply('❌ Admin access required')
-      return
-    }
+  // Commands that require group chats (game management)
+  bot.command('killgame', groupAdminMiddleware, async (ctx) => {
+    try {
+      const groupChatId = ctx.chat.id
 
+      const game = gameState.get(groupChatId)
+      if (!game) {
+        await ctx.reply('❌ No game found in this group')
+        return
+      }
+
+      if (game.state === 'ended') {
+        await ctx.reply('❌ Game is already ended')
+        return
+      }
+
+      // Notify players - existing logic unchanged
+      try {
+        const adminName = ctx.from!.first_name || 'Admin'
+        const escapedAdminName = adminName.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&')
+        const terminationMessage = `🚨 **GAME TERMINATED BY ADMIN** 🚨\n\n` +
+          `The game has been forcefully ended by ${escapedAdminName}.\n` +
+          `All players have been notified.`
+
+        await bot.api.sendMessage(groupChatId, terminationMessage, { parse_mode: 'Markdown' })
+
+        for (const player of game.players) {
+          try {
+            await bot.api.sendMessage(
+              player.id,
+              `🚨 **Game Terminated**\n\nYour Whot game in this group has been terminated by an administrator.`,
+              { parse_mode: 'Markdown' }
+            )
+          } catch (error) {
+            logger.warn('Failed to notify player of game termination', {
+              playerId: player.id,
+              groupChatId,
+              error: error instanceof Error ? error.message : String(error)
+            })
+          }
+        }
+      } catch (error) {
+        logger.warn('Failed to send termination notifications', {
+          groupChatId,
+          error: error instanceof Error ? error.message : String(error)
+        })
+      }
+
+      const playerNames = game.players.map(p => p.firstName.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&')).join(', ')
+      const gameInfo = `${game.state} (${game.players.length} players: ${playerNames})`
+
+      clearGame(groupChatId)
+
+      await ctx.reply(`💀 **Game Killed Successfully**\n\nGame in this group: ${gameInfo}\n\nAll players have been notified.`, { parse_mode: 'Markdown' })
+
+      logger.info('Admin killed ongoing game', {
+        userId: ctx.from?.id,
+        adminName: ctx.from!.first_name,
+        groupChatId,
+        gameState: game.state,
+        playerCount: game.players.length,
+        players: game.players.map(p => ({ id: p.id, name: p.firstName }))
+      })
+
+    } catch (error) {
+      await ctx.reply(`❌ Kill game failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      logger.error('Admin kill game failed', {
+        userId: ctx.from?.id,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    }
+  })
+
+  bot.command('forcestart', groupAdminMiddleware, async (ctx) => {
     // Only work in group chats
     if (ctx.chat.type === 'private') {
       await ctx.reply('❌ This command can only be used in group chats')
@@ -296,7 +350,7 @@ export function handleAdminCommands(bot: Bot) {
   })
 
   // NEW: Safe group-specific cleanup command
-  bot.command('cleangroup', async (ctx) => {
+  bot.command('cleangroup', groupAdminMiddleware, async (ctx) => {
     await updateAdminList(ctx)
     if (!ctx.from || !isAdmin(ctx.from.id)) {
       await ctx.reply('❌ Admin access required')
@@ -396,7 +450,7 @@ export function handleAdminCommands(bot: Bot) {
   })
 
   // Command to kill an ongoing game
-  bot.command('killgame', async (ctx) => {
+  bot.command('killgame', groupAdminMiddleware, async (ctx) => {
     await updateAdminList(ctx)
     if (!ctx.from || !isAdmin(ctx.from.id)) {
       await ctx.reply('❌ Admin access required')
@@ -483,7 +537,7 @@ export function handleAdminCommands(bot: Bot) {
       })
     }
   })  // Command to show admin help
-  bot.command('adminhelp', async (ctx) => {
+  bot.command('adminhelp', groupAdminMiddleware, async (ctx) => {
     await updateAdminList(ctx)
     if (!ctx.from || !isAdmin(ctx.from.id)) {
       await ctx.reply('❌ Admin access required')
