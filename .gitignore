@@ -57,3 +57,6 @@ test.http
 *.http
 rose_settings.json
 rose.txt
+
+linkedin-articles/
+linkedin-posts/
