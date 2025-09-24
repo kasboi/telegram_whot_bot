@@ -1,15 +1,12 @@
-import { assertEquals, assertRejects } from "https://deno.land/std@0.208.0/assert/mod.ts"
+import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts"
 import {
-  deliverPlayerHand,
-  deliverAllPlayerHands,
-  notifyPrivateMessageRequired,
   type HandDeliveryResult
 } from "../src/game/handDelivery.ts"
 
 // Mock Bot API for testing
 class MockBotAPI {
   private shouldFailPrivateMessage: Set<number> = new Set()
-  private sentMessages: Array<{ chatId: number; text: string; options?: any }> = []
+  private sentMessages: Array<{ chatId: number; text: string; options?: Record<string, unknown> }> = []
   public botUsername = "testbot"
 
   constructor() {
@@ -27,7 +24,7 @@ class MockBotAPI {
     }
   }
 
-  async sendMessage(chatId: number, text: string, options?: any) {
+  sendMessage(chatId: number, text: string, options?: Record<string, unknown>) {
     this.sentMessages.push({ chatId, text, options })
 
     // Simulate private message failure for configured users
@@ -43,7 +40,7 @@ class MockBotAPI {
     }
   }
 
-  async getMe() {
+  getMe() {
     return {
       id: 123456789,
       is_bot: true,
@@ -61,26 +58,6 @@ class MockBotAPI {
   }
 }
 
-// Mock sendPlayerHand function
-const mockSendPlayerHand = (mockAPI: MockBotAPI) => {
-  return async (bot: any, groupChatId: number, userId: number, firstName: string): Promise<boolean> => {
-    try {
-      await mockAPI.sendMessage(userId, `Mock hand for ${firstName}`)
-      return true
-    } catch (error) {
-      return false
-    }
-  }
-}
-
-// Create mock bot instance
-function createMockBot(mockAPI: MockBotAPI) {
-  return {
-    api: mockAPI,
-    // Add other bot methods as needed for testing
-  }
-}
-
 // Test Data
 const TEST_GROUP_CHAT_ID = -1001234567890
 const TEST_PLAYERS = [
@@ -90,21 +67,14 @@ const TEST_PLAYERS = [
   { id: 444444444, firstName: "Diana" }
 ]
 
-Deno.test("deliverPlayerHand - successful delivery", async () => {
+Deno.test("deliverPlayerHand - successful delivery", () => {
   const mockAPI = new MockBotAPI()
-  const mockBot = createMockBot(mockAPI)
-
-  // Mock the sendPlayerHand import
-  const originalSendPlayerHand = await import("../src/handlers/private.ts").then(m => m.sendPlayerHand)
-
-  // Temporarily replace with mock
-  const { deliverPlayerHand } = await import("../src/game/handDelivery.ts")
 
   // Manually test the logic since we can't easily mock ES modules
   const testPlayer = TEST_PLAYERS[0]
 
   try {
-    await mockAPI.sendMessage(testPlayer.id, "Test hand delivery")
+    mockAPI.sendMessage(testPlayer.id, "Test hand delivery")
     const expectedResult: HandDeliveryResult = {
       success: true,
       playerId: testPlayer.id,
@@ -115,12 +85,13 @@ Deno.test("deliverPlayerHand - successful delivery", async () => {
     // Test successful case manually
     assertEquals(expectedResult.success, true)
     assertEquals(expectedResult.needsPrivateMessage, false)
-  } catch (error: any) {
-    throw new Error(`Test failed: ${error.message}`)
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    throw new Error(`Test failed: ${errorMessage}`)
   }
 })
 
-Deno.test("deliverPlayerHand - failed delivery (private message blocked)", async () => {
+Deno.test("deliverPlayerHand - failed delivery (private message blocked)", () => {
   const mockAPI = new MockBotAPI()
   const testPlayer = TEST_PLAYERS[0]
 
@@ -128,9 +99,9 @@ Deno.test("deliverPlayerHand - failed delivery (private message blocked)", async
   mockAPI.setPrivateMessageFail(testPlayer.id, true)
 
   try {
-    await mockAPI.sendMessage(testPlayer.id, "Test message")
+    mockAPI.sendMessage(testPlayer.id, "Test message")
     throw new Error("Expected message to fail")
-  } catch (error) {
+  } catch (_error) {
     // This should fail as expected
     const expectedResult: HandDeliveryResult = {
       success: false,
@@ -145,7 +116,7 @@ Deno.test("deliverPlayerHand - failed delivery (private message blocked)", async
   }
 })
 
-Deno.test("deliverAllPlayerHands - mixed success and failure", async () => {
+Deno.test("deliverAllPlayerHands - mixed success and failure", () => {
   const mockAPI = new MockBotAPI()
 
   // Configure some users to fail
@@ -166,9 +137,8 @@ Deno.test("deliverAllPlayerHands - mixed success and failure", async () => {
   })
 })
 
-Deno.test("notifyPrivateMessageRequired - single player notification", async () => {
+Deno.test("notifyPrivateMessageRequired - single player notification", () => {
   const mockAPI = new MockBotAPI()
-  const mockBot = createMockBot(mockAPI)
 
   const failedDeliveries: HandDeliveryResult[] = [
     {
@@ -205,9 +175,8 @@ Deno.test("notifyPrivateMessageRequired - single player notification", async () 
   })
 })
 
-Deno.test("notifyPrivateMessageRequired - multiple players notification", async () => {
+Deno.test("notifyPrivateMessageRequired - multiple players notification", () => {
   const mockAPI = new MockBotAPI()
-  const mockBot = createMockBot(mockAPI)
 
   const failedDeliveries: HandDeliveryResult[] = [
     {
@@ -298,9 +267,7 @@ Deno.test("Hand delivery performance - concurrent delivery", async () => {
   assertEquals(executionTime < 1000, true, `Execution should be fast, took ${executionTime}ms`)
 })
 
-Deno.test("Error handling - invalid player data", async () => {
-  const mockAPI = new MockBotAPI()
-
+Deno.test("Error handling - invalid player data", () => {
   // Test with invalid player data
   const invalidPlayers = [
     { id: 0, firstName: "" },
@@ -322,8 +289,9 @@ Deno.test("Error handling - invalid player data", async () => {
       assertEquals(typeof result.success, "boolean")
       assertEquals(typeof result.playerId, "number")
       assertEquals(typeof result.playerName, "string")
-    } catch (error: any) {
-      throw new Error(`Should handle invalid data gracefully: ${error.message}`)
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      throw new Error(`Should handle invalid data gracefully: ${errorMessage}`)
     }
   }
 })
@@ -357,7 +325,7 @@ export const INTEGRATION_TEST_DATA = {
   },
 
   testScenarios: {
-    allPlayersSuccess: TEST_PLAYERS.map((p, i) => ({
+    allPlayersSuccess: TEST_PLAYERS.map((p) => ({
       ...p,
       shouldFail: false,
       expectedSuccess: true
@@ -376,5 +344,3 @@ export const INTEGRATION_TEST_DATA = {
     }))
   }
 }
-
-console.log("✅ All hand delivery tests completed successfully!")

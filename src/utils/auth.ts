@@ -5,6 +5,6 @@ import { MyContext } from "../bot.ts"
 // In a real scenario, this would be more robust.
 const authorizedUsers = [674588713] // Replace with actual admin IDs
 
-export const isAdmin = async (ctx: CommandContext<MyContext>): Promise<boolean> => {
+export const isAdmin = (ctx: CommandContext<MyContext>): boolean => {
     return authorizedUsers.includes(ctx.from?.id || 0)
 }

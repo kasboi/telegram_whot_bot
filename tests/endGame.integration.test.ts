@@ -1,6 +1,6 @@
-import { assertEquals, assertNotEquals, assertExists, assert } from "https://deno.land/std@0.177.0/testing/asserts.ts"
+import { assertEquals, assertExists, assert } from "https://deno.land/std@0.177.0/testing/asserts.ts"
 import { describe, it, beforeEach, afterEach } from "https://deno.land/std@0.177.0/testing/bdd.ts"
-import { GameSession, Card } from "../src/types/game.ts"
+import { GameSession } from "../src/types/game.ts"
 import { createGame, addPlayer, startGameWithCards, drawCard, getGame, clearGame } from "../src/game/state.ts"
 
 describe("End Game Scenarios", () => {
